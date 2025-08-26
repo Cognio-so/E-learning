@@ -1,6 +1,5 @@
 'use client'
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import useAuthStore from "@/store/useAuthStore";
 import { Button } from "@/components/ui/button";
 import { Loader2 } from "lucide-react";
@@ -8,7 +7,6 @@ import { toast } from "sonner";
 import Link from "next/link";
 
 const Login = () => {
-    const router = useRouter();
     const { login, isLoading, setIsLoading } = useAuthStore();
     const [formData, setFormData] = useState({
         email: "",
@@ -41,11 +39,11 @@ const Login = () => {
             if (result.success) {
                 toast.success("Login successful!");
                 
-                // Redirect based on user role
-                const dashboardUrl = result.user.role === 'student' 
-                    ? '/student/dashboard' 
-                    : '/teacher/dashboard';
-                router.push(dashboardUrl);
+                // Force a page refresh to ensure middleware picks up the new authentication state
+                // This is necessary because middleware runs on the server side
+                setTimeout(() => {
+                    window.location.href = '/';
+                }, 1000); // Small delay to show the success message
             }
         } catch (error) {
             console.error("Login failed:", error);
@@ -122,8 +120,6 @@ const Login = () => {
                         </Link>
                     </p>
                 </div>
-
-              
             </div>
         </div>
     );

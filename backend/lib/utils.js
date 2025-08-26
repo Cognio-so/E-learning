@@ -8,14 +8,14 @@ const generateToken = (userId, role, email) => {
         iss: 'ED_TECH'      // issuer for middleware verification
     };
     
-    // 15-minute access token (increased from 2 minutes for better UX)
+    // 15-minute access token (reasonable balance of security and UX)
     const accessToken = jwt.sign(payload, process.env.JWT_SECRET, { 
-        expiresIn: '15m' 
+        expiresIn: '2m' 
     });
     
     // 7-day refresh token
     const refreshToken = jwt.sign(payload, process.env.JWT_SECRET, { 
-        expiresIn: '7d' 
+        expiresIn: '5d' 
     });
 
     return { accessToken, refreshToken };
@@ -27,7 +27,7 @@ const setCookies = (res, accessToken, refreshToken) => {
         httpOnly: true,
         sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
         secure: process.env.NODE_ENV === 'production',
-        maxAge: 15 * 60 * 1000, // 15 minutes
+        maxAge: 2 * 60 * 1000, // 2 minutes
         path: '/',
     });
 
@@ -36,7 +36,7 @@ const setCookies = (res, accessToken, refreshToken) => {
         httpOnly: true,
         sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
         secure: process.env.NODE_ENV === 'production',
-        maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+        maxAge: 5 * 24 * 60 * 60 * 1000, // 5 days
         path: '/',
     });
 }
