@@ -27,11 +27,13 @@ langsmith
 python-multipart
 langchain_perplexity
 sounddevice
-silero_vad
-pyaudio
+# silero_vad  # This package doesn't exist on PyPI
+# pyaudio     # Requires system dependencies - removed for deployment
 numpy
 torch
 websockets
 python-socketio
 websocket-client
 rank_bm25
+python-dotenv
+nest-asyncio
