@@ -6,6 +6,7 @@ import axios from "axios";
 const axiosInstance = axios.create({
     baseURL: process.env.NEXT_PUBLIC_API_URL,
     withCredentials: true,
+    timeout: 10000, // 10 second timeout
 });
 
 let refreshInterval = null;
@@ -31,7 +32,7 @@ const setupTokenManagement = (refreshTokenFn, clearAuthFn) => {
         refreshInterval = null;
     }
 
-    // Start automatic refresh every 1 minutes (before 2-minute expiry)
+    // Start automatic refresh every 10 minutes (before 15-minute expiry)
     refreshInterval = setInterval(async () => {
         try {
             await refreshTokenFn();
@@ -40,9 +41,9 @@ const setupTokenManagement = (refreshTokenFn, clearAuthFn) => {
             console.log('❌ Auto-refresh failed, logging out');
             clearAuthFn();
         }
-    }, 1 * 60 * 1000); // 1 minutes
+    }, 10 * 60 * 1000); // 10 minutes
 
-    console.log('🔄 Token auto-refresh started (every 1 minutes)');
+    console.log('🔄 Token auto-refresh started (every 10 minutes)');
 };
 
 const clearTokenManagement = () => {
@@ -225,7 +226,10 @@ const useAuthStore = create(
                     const response = await axios.post(
                         `${process.env.NEXT_PUBLIC_API_URL}/api/auth/refresh`,
                         {},
-                        { withCredentials: true }
+                        { 
+                            withCredentials: true,
+                            timeout: 5000 // 5 second timeout for refresh
+                        }
                     );
                     
                     if (response.status === 200) {

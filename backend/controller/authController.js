@@ -87,7 +87,8 @@ const login = async (req, res) => {
             return res.status(400).json({ success: false, message: 'All fields are required' });
         }
 
-        const user = await User.findOne({ email });
+        // Add timeout to database query
+        const user = await User.findOne({ email }).maxTimeMS(5000);
         if (!user) {
             return res.status(400).json({ success: false, message: 'Invalid credentials' });
         }
@@ -112,8 +113,11 @@ const login = async (req, res) => {
 
         const { accessToken, refreshToken } = generateToken(user._id, user.role, user.email);
         
-        user.refreshToken = refreshToken;
-        await user.save();
+        // Update user with refresh token and last active
+        await User.findByIdAndUpdate(user._id, { 
+            refreshToken,
+            lastActive: new Date()
+        });
         
         setCookies(res, accessToken, refreshToken);
 
@@ -121,14 +125,19 @@ const login = async (req, res) => {
             success: true, 
             message: 'Login successful', 
             user: {
-                ...user._doc,
-                password: undefined,
-                refreshToken: undefined,
+                _id: user._id,
+                name: user.name,
+                email: user.email,
+                role: user.role,
+                grade: user.grade,
+                isVerified: user.isVerified,
+                createdAt: user.createdAt,
+                lastActive: user.lastActive,
             }
         });
     } catch (error) {
         console.error('Login Error:', error);
-        return res.status(500).json({ success: false, message: error.message });
+        return res.status(500).json({ success: false, message: 'Internal server error' });
     }
 }
 

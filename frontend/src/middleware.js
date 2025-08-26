@@ -10,6 +10,34 @@ export async function middleware(req) {
   const isVerifyRoute = path.match(/^\/auth\/verify\/[^\/]+$/);
   const isPublicRoute = publicRoutes.includes(path) || !!isVerifyRoute;
 
+  // Handle /dashboard redirect to role-specific dashboard
+  if (path === '/dashboard') {
+    if (!accessToken && !refreshToken) {
+      return NextResponse.redirect(new URL('/auth/login', req.url));
+    }
+
+    if (accessToken) {
+      try {
+        const secret = new TextEncoder().encode(process.env.JWT_SECRET);
+        const { payload } = await jwtVerify(accessToken, secret, {
+          issuer: 'ED_TECH',
+        });
+
+        const dashboardUrl = payload.role === 'student' ? '/student/dashboard' : '/teacher/dashboard';
+        return NextResponse.redirect(new URL(dashboardUrl, req.url));
+      } catch (error) {
+        // Token is invalid, redirect to login
+        const response = NextResponse.redirect(new URL('/auth/login', req.url));
+        response.cookies.delete('accessToken');
+        response.cookies.delete('refreshToken');
+        return response;
+      }
+    }
+
+    // If only refresh token exists, let the page handle it
+    return NextResponse.next();
+  }
+
   if (isPublicRoute) {
     if (accessToken && (path === '/' || path === '/auth/login' || path === '/auth/register')) {
       try {
@@ -21,12 +49,17 @@ export async function middleware(req) {
         const dashboardUrl = payload.role === 'student' ? '/student/dashboard' : '/teacher/dashboard';
         return NextResponse.redirect(new URL(dashboardUrl, req.url));
       } catch (error) {
+        // Token is invalid, clear cookies and continue
+        const response = NextResponse.next();
+        response.cookies.delete('accessToken');
+        response.cookies.delete('refreshToken');
+        return response;
       }
     }
     return NextResponse.next();
   }
 
-  
+  // Protected routes
   if (!accessToken && !refreshToken) {
     return NextResponse.redirect(new URL('/auth/login', req.url));
   }
@@ -38,6 +71,7 @@ export async function middleware(req) {
         issuer: 'ED_TECH',
       });
 
+      // Role-based access control
       if (path.startsWith('/student/') && payload.role !== 'student') {
         return NextResponse.redirect(new URL('/teacher/dashboard', req.url));
       }
@@ -49,11 +83,13 @@ export async function middleware(req) {
       return NextResponse.next();
 
     } catch (error) {
-      
+      // Token is invalid
       if (refreshToken) {
+        // Let the page handle token refresh
         return NextResponse.next();
       }
       
+      // No refresh token, redirect to login
       const response = NextResponse.redirect(new URL('/auth/login', req.url));
       response.cookies.delete('accessToken');
       response.cookies.delete('refreshToken');
@@ -61,6 +97,7 @@ export async function middleware(req) {
     }
   }
 
+  // If only refresh token exists, let the page handle it
   if (refreshToken) {
     return NextResponse.next();
   }
@@ -70,6 +107,7 @@ export async function middleware(req) {
 
 export const config = {
   matcher: [
+    '/dashboard',
     '/student/:path*',
     '/teacher/:path*',
     '/auth/login',
