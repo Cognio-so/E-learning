@@ -39,8 +39,13 @@ const Login = () => {
             if (result.success) {
                 toast.success("Login successful!");
                 
-                // Simple redirect to root - middleware will handle the rest
-                window.location.href = '/';
+                // Redirect directly to the appropriate dashboard based on user role
+                const dashboardUrl = result.user.role === 'student' 
+                    ? '/student/dashboard' 
+                    : '/teacher/dashboard';
+                
+                // Use window.location.href for a full page reload to ensure middleware picks up the new state
+                window.location.href = dashboardUrl;
             }
         } catch (error) {
             console.error("Login failed:", error);
