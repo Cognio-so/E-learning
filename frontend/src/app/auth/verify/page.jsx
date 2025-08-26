@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react';
+import { useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -8,7 +8,8 @@ import { toast } from 'sonner';
 import Link from 'next/link';
 import useAuthStore from '@/store/useAuthStore';
 
-const VerifyEmailPage = () => {
+// Component that uses useSearchParams
+const VerifyEmailContent = () => {
     const router = useRouter();
     const searchParams = useSearchParams();
     const { verifyEmail, isLoading, setIsLoading } = useAuthStore();
@@ -92,7 +93,6 @@ const VerifyEmailPage = () => {
                         </p>
                     )}
                     
-                   
                     {email && (
                         <div className="bg-blue-50 border border-blue-200 rounded-md p-4 mb-6 dark:bg-gray-800 dark:text-white dark:border-gray-700">
                             <p className="text-sm text-blue-800 dark:text-white">
@@ -154,6 +154,30 @@ const VerifyEmailPage = () => {
                 </div>
             </div>
         </div>
+    );
+};
+
+// Loading fallback component
+const VerifyEmailLoading = () => (
+    <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
+        <div className="bg-white p-8 rounded-lg shadow-md w-full max-w-md dark:bg-gray-800 dark:border-gray-700">
+            <div className="text-center">
+                <div className="w-16 h-16 bg-gray-200 rounded-full mx-auto mb-4 animate-pulse"></div>
+                <div className="h-8 bg-gray-200 rounded mb-4 animate-pulse"></div>
+                <div className="h-4 bg-gray-200 rounded mb-6 animate-pulse"></div>
+                <div className="h-12 bg-gray-200 rounded mb-4 animate-pulse"></div>
+                <div className="h-10 bg-gray-200 rounded animate-pulse"></div>
+            </div>
+        </div>
+    </div>
+);
+
+// Main page component with Suspense boundary
+const VerifyEmailPage = () => {
+    return (
+        <Suspense fallback={<VerifyEmailLoading />}>
+            <VerifyEmailContent />
+        </Suspense>
     );
 };
 
