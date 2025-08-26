@@ -51,6 +51,15 @@ export async function middleware(req) {
       }
     }
     
+    // For auth pages, add no-cache headers
+    if (path.startsWith('/auth/')) {
+      const response = NextResponse.next();
+      response.headers.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+      response.headers.set('Pragma', 'no-cache');
+      response.headers.set('Expires', '0');
+      return response;
+    }
+    
     return NextResponse.next();
   }
 

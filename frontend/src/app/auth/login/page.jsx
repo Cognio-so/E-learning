@@ -1,5 +1,5 @@
 'use client'
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import useAuthStore from "@/store/useAuthStore";
 import { Button } from "@/components/ui/button";
 import { Loader2 } from "lucide-react";
@@ -12,6 +12,14 @@ const Login = () => {
         email: "",
         password: "",
     });
+
+    // Force fresh page load on mount to prevent caching issues
+    useEffect(() => {
+        // Clear any cached data
+        if (typeof window !== 'undefined') {
+            window.history.replaceState(null, '', window.location.href);
+        }
+    }, []);
 
     const handleChange = (e) => {
         const { name, value } = e.target;
@@ -44,8 +52,8 @@ const Login = () => {
                     ? '/student/dashboard' 
                     : '/teacher/dashboard';
                 
-                // Use window.location.href for a full page reload to ensure middleware picks up the new state
-                window.location.href = dashboardUrl;
+                // Force a fresh page load to ensure middleware picks up the new state
+                window.location.replace(dashboardUrl);
             }
         } catch (error) {
             console.error("Login failed:", error);
