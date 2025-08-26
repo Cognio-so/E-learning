@@ -1,6 +1,3 @@
-
-
-
 const express = require('express');
 const { 
     createLesson, 
@@ -33,7 +30,7 @@ router.delete('/:id', protectRoute, requireTeacher, deleteLesson);
 // Student routes
 router.get('/student', protectRoute, requireStudent, getLessonsByStudent);
 
-// Shared routes
+// Shared routes - Move this AFTER the specific routes to avoid conflicts
 router.get('/:id', protectRoute, getLessonById);
 
 module.exports = router;

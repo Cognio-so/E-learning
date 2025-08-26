@@ -6,6 +6,9 @@ export async function middleware(req) {
   const accessToken = req.cookies.get('accessToken')?.value;
   const refreshToken = req.cookies.get('refreshToken')?.value;
 
+  // Ensure we're working with HTTPS URLs in production
+  const baseUrl = req.nextUrl.clone();
+  
   // Define public routes that don't require authentication
   const publicRoutes = ['/', '/auth/login', '/auth/register', '/auth/verify'];
   const isVerifyRoute = path.match(/^\/auth\/verify\/[^\/]+$/);
@@ -21,13 +24,26 @@ export async function middleware(req) {
           issuer: 'ED_TECH',
         });
 
-        const dashboardUrl = payload.role === 'student' ? '/student/dashboard' : '/teacher/dashboard';
-        return NextResponse.redirect(new URL(dashboardUrl, req.url));
+        const dashboardPath = payload.role === 'student' ? '/student/dashboard' : '/teacher/dashboard';
+        const dashboardUrl = new URL(dashboardPath, baseUrl);
+        return NextResponse.redirect(dashboardUrl);
       } catch (error) {
         // Token is invalid, clear cookies and allow access to login
         const response = NextResponse.next();
-        response.cookies.delete('accessToken');
-        response.cookies.delete('refreshToken');
+        response.cookies.set('accessToken', '', { 
+          expires: new Date(0),
+          path: '/',
+          httpOnly: true,
+          secure: process.env.NODE_ENV === 'production',
+          sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax'
+        });
+        response.cookies.set('refreshToken', '', { 
+          expires: new Date(0),
+          path: '/',
+          httpOnly: true,
+          secure: process.env.NODE_ENV === 'production',
+          sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax'
+        });
         return response;
       }
     }
@@ -40,24 +56,28 @@ export async function middleware(req) {
           issuer: 'ED_TECH',
         });
 
-        const dashboardUrl = payload.role === 'student' ? '/student/dashboard' : '/teacher/dashboard';
-        return NextResponse.redirect(new URL(dashboardUrl, req.url));
+        const dashboardPath = payload.role === 'student' ? '/student/dashboard' : '/teacher/dashboard';
+        const dashboardUrl = new URL(dashboardPath, baseUrl);
+        return NextResponse.redirect(dashboardUrl);
       } catch (error) {
         // Token is invalid, allow access to home page
         const response = NextResponse.next();
-        response.cookies.delete('accessToken');
-        response.cookies.delete('refreshToken');
+        response.cookies.set('accessToken', '', { 
+          expires: new Date(0),
+          path: '/',
+          httpOnly: true,
+          secure: process.env.NODE_ENV === 'production',
+          sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax'
+        });
+        response.cookies.set('refreshToken', '', { 
+          expires: new Date(0),
+          path: '/',
+          httpOnly: true,
+          secure: process.env.NODE_ENV === 'production',
+          sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax'
+        });
         return response;
       }
-    }
-    
-    // For auth pages, add no-cache headers
-    if (path.startsWith('/auth/')) {
-      const response = NextResponse.next();
-      response.headers.set('Cache-Control', 'no-cache, no-store, must-revalidate');
-      response.headers.set('Pragma', 'no-cache');
-      response.headers.set('Expires', '0');
-      return response;
     }
     
     return NextResponse.next();
@@ -65,7 +85,8 @@ export async function middleware(req) {
 
   // Handle protected routes (student and teacher routes)
   if (!accessToken && !refreshToken) {
-    return NextResponse.redirect(new URL('/auth/login', req.url));
+    const loginUrl = new URL('/auth/login', baseUrl);
+    return NextResponse.redirect(loginUrl);
   }
 
   if (accessToken) {
@@ -77,11 +98,13 @@ export async function middleware(req) {
 
       // Role-based access control
       if (path.startsWith('/student/') && payload.role !== 'student') {
-        return NextResponse.redirect(new URL('/teacher/dashboard', req.url));
+        const teacherUrl = new URL('/teacher/dashboard', baseUrl);
+        return NextResponse.redirect(teacherUrl);
       }
       
       if (path.startsWith('/teacher/') && payload.role !== 'teacher') {
-        return NextResponse.redirect(new URL('/student/dashboard', req.url));
+        const studentUrl = new URL('/student/dashboard', baseUrl);
+        return NextResponse.redirect(studentUrl);
       }
       
       return NextResponse.next();
@@ -94,9 +117,22 @@ export async function middleware(req) {
       }
       
       // No refresh token, redirect to login
-      const response = NextResponse.redirect(new URL('/auth/login', req.url));
-      response.cookies.delete('accessToken');
-      response.cookies.delete('refreshToken');
+      const loginUrl = new URL('/auth/login', baseUrl);
+      const response = NextResponse.redirect(loginUrl);
+      response.cookies.set('accessToken', '', { 
+        expires: new Date(0),
+        path: '/',
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax'
+      });
+      response.cookies.set('refreshToken', '', { 
+        expires: new Date(0),
+        path: '/',
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax'
+      });
       return response;
     }
   }
@@ -106,7 +142,8 @@ export async function middleware(req) {
     return NextResponse.next();
   }
 
-  return NextResponse.redirect(new URL('/auth/login', req.url));
+  const loginUrl = new URL('/auth/login', baseUrl);
+  return NextResponse.redirect(loginUrl);
 }
 
 export const config = {

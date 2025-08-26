@@ -2,18 +2,16 @@ const jwt = require("jsonwebtoken");
 
 const generateToken = (userId, role, email) => {
     const payload = { 
-        sub: userId,        // 'sub' for middleware compatibility
+        sub: userId,
         role, 
         email,
-        iss: 'ED_TECH'      // issuer for middleware verification
+        iss: 'ED_TECH'
     };
     
-    // 15-minute access token (reasonable balance of security and UX)
     const accessToken = jwt.sign(payload, process.env.JWT_SECRET, { 
         expiresIn: '15m' 
     });
     
-    // 7-day refresh token
     const refreshToken = jwt.sign(payload, process.env.JWT_SECRET, { 
         expiresIn: '7d' 
     });
@@ -22,22 +20,27 @@ const generateToken = (userId, role, email) => {
 }
 
 const setCookies = (res, accessToken, refreshToken) => {
+    const isProduction = process.env.NODE_ENV === 'production';
+    
+    // Common cookie options for production
+    const cookieOptions = {
+        httpOnly: true,
+        secure: isProduction, // Only secure in production
+        sameSite: isProduction ? 'none' : 'lax', // 'none' for cross-site in production
+        path: '/',
+        domain: isProduction ? '.vercel.app' : undefined, // Allow subdomain sharing in production
+    };
+
     // Access token cookie (15 minutes)
     res.cookie('accessToken', accessToken, {
-        httpOnly: true,
-        sameSite: 'lax', // Changed from 'none' to 'lax' for better compatibility
-        secure: process.env.NODE_ENV === 'production',
+        ...cookieOptions,
         maxAge: 15 * 60 * 1000, // 15 minutes
-        path: '/',
     });
 
     // Refresh token cookie (7 days)
     res.cookie('refreshToken', refreshToken, {
-        httpOnly: true,
-        sameSite: 'lax', // Changed from 'none' to 'lax' for better compatibility
-        secure: process.env.NODE_ENV === 'production',
+        ...cookieOptions,
         maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-        path: '/',
     });
 }
 
