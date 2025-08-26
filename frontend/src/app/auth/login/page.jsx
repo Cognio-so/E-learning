@@ -39,11 +39,8 @@ const Login = () => {
             if (result.success) {
                 toast.success("Login successful!");
                 
-                // Force a page refresh to ensure middleware picks up the new authentication state
-                // This is necessary because middleware runs on the server side
-                setTimeout(() => {
-                    window.location.href = '/';
-                }, 1000); // Small delay to show the success message
+                // Simple redirect to root - middleware will handle the rest
+                window.location.href = '/';
             }
         } catch (error) {
             console.error("Login failed:", error);

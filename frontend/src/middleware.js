@@ -6,14 +6,15 @@ export async function middleware(req) {
   const accessToken = req.cookies.get('accessToken')?.value;
   const refreshToken = req.cookies.get('refreshToken')?.value;
 
+  // Define public routes that don't require authentication
   const publicRoutes = ['/', '/auth/login', '/auth/register', '/auth/verify'];
   const isVerifyRoute = path.match(/^\/auth\/verify\/[^\/]+$/);
   const isPublicRoute = publicRoutes.includes(path) || !!isVerifyRoute;
 
-  // Handle public routes
+  // If it's a public route, allow access
   if (isPublicRoute) {
-    // If user is authenticated and trying to access login/register, redirect to appropriate dashboard
-    if (accessToken && (path === '/' || path === '/auth/login' || path === '/auth/register')) {
+    // Only redirect authenticated users away from login/register pages
+    if (accessToken && (path === '/auth/login' || path === '/auth/register')) {
       try {
         const secret = new TextEncoder().encode(process.env.JWT_SECRET);
         const { payload } = await jwtVerify(accessToken, secret, {
@@ -23,17 +24,37 @@ export async function middleware(req) {
         const dashboardUrl = payload.role === 'student' ? '/student/dashboard' : '/teacher/dashboard';
         return NextResponse.redirect(new URL(dashboardUrl, req.url));
       } catch (error) {
-        // Token is invalid, clear cookies and continue to login
+        // Token is invalid, clear cookies and allow access to login
         const response = NextResponse.next();
         response.cookies.delete('accessToken');
         response.cookies.delete('refreshToken');
         return response;
       }
     }
+    
+    // For root path, redirect authenticated users to their dashboard
+    if (path === '/' && accessToken) {
+      try {
+        const secret = new TextEncoder().encode(process.env.JWT_SECRET);
+        const { payload } = await jwtVerify(accessToken, secret, {
+          issuer: 'ED_TECH',
+        });
+
+        const dashboardUrl = payload.role === 'student' ? '/student/dashboard' : '/teacher/dashboard';
+        return NextResponse.redirect(new URL(dashboardUrl, req.url));
+      } catch (error) {
+        // Token is invalid, allow access to home page
+        const response = NextResponse.next();
+        response.cookies.delete('accessToken');
+        response.cookies.delete('refreshToken');
+        return response;
+      }
+    }
+    
     return NextResponse.next();
   }
 
-  // Handle protected routes
+  // Handle protected routes (student and teacher routes)
   if (!accessToken && !refreshToken) {
     return NextResponse.redirect(new URL('/auth/login', req.url));
   }
@@ -71,7 +92,7 @@ export async function middleware(req) {
     }
   }
 
-  // Has refresh token but no access token
+  // Has refresh token but no access token - let the page handle refresh
   if (refreshToken) {
     return NextResponse.next();
   }
