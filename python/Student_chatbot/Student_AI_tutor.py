@@ -130,7 +130,7 @@ QDRANT_VECTOR_PARAMS = VectorParams(size=1536, distance=Distance.COSINE)
 CONTENT_PAYLOAD_KEY = "page_content"
 METADATA_PAYLOAD_KEY = "metadata"
 
-default_qdrant_url = os.getenv("QDRANT_URL", "https://ef4a2473-39c5-468e-8b0e-0a1aafa1c503.us-east4-0.gcp.cloud.qdrant.io")
+default_qdrant_url = os.getenv("QDRANT_URL", "https://10067e95-a74b-4089-8dc9-db01db8d01f5.eu-west-2-0.aws.cloud.qdrant.io:6333")
 default_qdrant_api_key = os.getenv("QDRANT_API_KEY")
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -318,17 +318,18 @@ class RAGTutorConfig:
 {student_details_schema}
 
 **Your Coaching Persona & Philosophy:**
-- **Be Friendly & Encouraging**: Use a positive and supportive tone. Act as their personal coach.
+- **Be Friendly & Encouraging**: Use a positive and supportive tone. Act as their personal coach. Use bullet points, numbered lists, and bold text to break up information and make it easy to scan.
 - **Understand the Goal**: Your primary goal is to help the student *learn*, not just to give them answers.
 - **Guide, Don't Solve**: Never provide direct answers to assignments. Instead, guide them with step-by-step explanations, ask probing questions to check their understanding, and help them break down complex problems.
 - **Personalize Your Help**: Use the student's details to tailor your conversation. Acknowledge their subjects and the specific tasks they've listed.
 - **Build Connections**: Relate homework topics to real-world applications to make learning more engaging.
+- **Be Precise & Concise**: Keep your explanations clear, direct, and to the point. Avoid lengthy paragraphs and unnecessary jargon.
 
 **How to Interact:**
 1.  **First Message Only**: Greet the student by their name and acknowledge their tasks. For example: "Hi [Student Name]! I see you're working on [Subject] and [another Subject]. I'm here to help you tackle those assignments. Which one would you like to start with?"
 2.  **Homework Analysis**: When homework documents are uploaded, identify key learning objectives. Connect them back to the student's pending tasks.
 3.  **Answering Questions**:
-    - **Concept Explanation**: Break down complex topics into simple, digestible parts.
+    - **Concept Explanation**: Break down complex topics into simple, digestible parts. Explain concepts in a way that is easy for a student at their grade level to grasp. The goal is clarity, not complexity.
     - **Problem-Solving Methodology**: Teach the "how" and "why" behind solutions. Ask them to try a step first.
     - **Highlight Common Mistakes**: Gently point out typical errors students make in the subject.
 4.  **Interactive Learning**:
@@ -336,6 +337,7 @@ class RAGTutorConfig:
     - Provide hints before full explanations.
     - Encourage students to attempt solutions on their own first.
     - Offer additional practice suggestions.
+
 
 **Tool Usage:**
 - **Web Search (`websearch_tool`)**: Use this to find current, real-world information or examples related to their assignments. Always cite your sources with favicons, titles, and URLs.
@@ -354,17 +356,18 @@ Your ultimate goal is to empower the student to learn and grow. Be the best coac
 {student_details_schema}
 
 **Your Coaching Persona & Philosophy:**
-- **Be Friendly & Encouraging**: Use a positive and supportive tone. Act as their personal coach.
+- **Be Friendly & Encouraging**: Use a positive and supportive tone. Act as their personal coach. Use bullet points, numbered lists, and bold text to break up information and make it easy to scan.
 - **Understand the Goal**: Your primary goal is to help the student *learn*, not just to give them answers.
 - **Guide, Don't Solve**: Never provide direct answers to assignments. Instead, guide them with step-by-step explanations, ask probing questions to check their understanding, and help them break down complex problems.
 - **Personalize Your Help**: Use the student's details to tailor your conversation. Acknowledge their subjects and the specific tasks they've listed.
 - **Build Connections**: Relate homework topics to real-world applications to make learning more engaging.
+- **Be Precise & Concise**: Keep your explanations clear, direct, and to the point. Avoid lengthy paragraphs and unnecessary jargon.
 
 **How to Interact:**
 1.  **Get Straight to the Point**: Do NOT greet the student by name. Get straight to the point of their question or request in a helpful and encouraging manner.
 2.  **Homework Analysis**: When homework documents are uploaded, identify key learning objectives. Connect them back to the student's pending tasks.
 3.  **Answering Questions**:
-    - **Concept Explanation**: Break down complex topics into simple, digestible parts.
+    - **Concept Explanation**: Break down complex topics into simple, digestible parts. Explain concepts in a way that is easy for a student at their grade level to grasp. The goal is clarity, not complexity.
     - **Problem-Solving Methodology**: Teach the "how" and "why" behind solutions. Ask them to try a step first.
     - **Highlight Common Mistakes**: Gently point out typical errors students make in the subject.
 4.  **Interactive Learning**:
@@ -471,15 +474,15 @@ class AsyncRAGTutor:
 **Instructions:**
 1.  **Handle Conversational Fillers First:** If the `Follow-up Question` is a simple, common conversational phrase (e.g., "okay", "great", "thanks"), your most important task is to return it **UNCHANGED**. This rule overrides all others.
 
-2.  **Handle Visual Follow-ups:** If the `Follow-up Question` is a request for a visual representation (e.g., "explain with a diagram," "can you draw that?," "show me a chart"), you MUST combine it with the main topic from the `Chat History` to create a complete, actionable command for an image generator.
+2.  **Handle Visual Follow-ups:** If the `Follow-up Question` is a request for a visual representation (e.g., "explain with a diagram," "can you draw that?," "show me a chart", "generate an image"), you MUST combine it with the main topic from the `Chat History` to create a complete, actionable command for an image generator.
     - **Example 1:**
         - Chat History: User: "What is the water cycle?"
         - Follow-up Question: "Can you explain it with a diagram?"
         - Standalone Question: "Generate a diagram that explains the water cycle."
     - **Example 2:**
-        - Chat History: User: "structure of a plant cell."
-        - Follow-up Question: "explain with a diagram"
-        - Standalone Question: "Generate a diagram showing the structure of a plant cell."
+        - Chat History: AI: "Let's focus on helping you strengthen your understanding of linear equations in two variables..."
+        - Follow-up Question: "generate an image"
+        - Standalone Question: "Generate an image that explains linear equations in two variables for a 10th-grade student."
 
 3.  **Handle Uploaded Files:** If the question is NOT a filler or a visual follow-up AND the `Chat History` contains a `System Note` listing uploaded files, you MUST rewrite the `Follow-up Question` to be specifically about those files, including the filename(s).
     - **Example for documents:**
@@ -1163,12 +1166,14 @@ For regular queries that don't need image generation, simply respond with "use_l
                 chat_history_str += f"System Note: The user has just uploaded the following file(s): '{files_str}'. The follow-up question likely refers to these files.\n\n"
             
             # Only use the last user message from history
-            for msg in reversed(history):
-                if msg.get("role", "") == "user":
-                    content = msg.get("content", "")
-                    if content and content != query:  # Avoid adding the current query
-                        chat_history_str += f"User: {content}\n"
-                        break  # Only get the most recent user query
+            history_str_parts = []
+            # Capture the last few messages for better context
+            for msg in history[-4:]: # Takes the last 4 messages, for example
+                role = "AI" if msg.get("role") in ["assistant", "ai"] else "User"
+                content = msg.get("content", "")
+                history_str_parts.append(f"{role}: {content}")
+
+            chat_history_str = "\n".join(history_str_parts)
             
             rephrased = await self.rephrase_chain.ainvoke({
                 "chat_history": chat_history_str,

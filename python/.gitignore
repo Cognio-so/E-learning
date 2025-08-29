@@ -10,3 +10,5 @@ __pycache__/
 temp_uploads/
 
 tutor_session_data/
+
+local_storage/

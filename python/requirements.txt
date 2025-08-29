@@ -37,3 +37,4 @@ websocket-client
 rank_bm25
 python-dotenv
 nest-asyncio
+boto3

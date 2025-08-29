@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 API_KEY = os.getenv("OPENAI_API_KEY")
-MODEL = "gpt-4o-realtime-preview-2024-12-17"  # Correct model name
+MODEL = "gpt-realtime-2025-08-28"  # Correct model name
 SAMPLE_RATE = 24000
 CHUNK_MS = 20
 CHUNK = int(SAMPLE_RATE * CHUNK_MS / 1000)
@@ -74,44 +74,43 @@ Core Instructions:
         # Start the session
         await ws.send_json(
                 {
-        "type": "session.update",
-        "session": {
-        "modalities": ["text", "audio"],
-        "instructions": prompt,
-        "voice" : "ash",
-        "input_audio_noise_reduction":{
-      "type": "near_field"
-    },
-        "turn_detection": {
-            "type": "server_vad",
-            "threshold": 0.5,
-            "prefix_padding_ms": 300,
-            "silence_duration_ms": 500,
-            "create_response": True,
-            "interrupt_response": True
-        },
-        "temperature": 0.8,
-        # "tracing": "auto"
-        # "input_audio_transcription": {
-        #     "model": "gpt-4o-transcribe"
-        #     },
-        # "tools": [
-        #     {
-        #         "type": "function",
-        #         "name": "get_weather",
-        #         "description": "Get the current weather...",
-        #         "parameters": {
-        #             "type": "object",
-        #             "properties": {
-        #                 "location": { "type": "string" }
-        #             },
-        #             "required": ["location"]
-        #         }
-        #     }
-        # ],
-        # "tool_choice": "auto",
-    },
-    }
+                    "type": "session.update",
+                    "session": {
+                        "modalities": ["text", "audio"],
+                        "instructions": prompt,
+                        "voice": "ash",
+                        "input_audio_noise_reduction": {
+                            "type": "near_field"
+                        },
+                        "turn_detection": {
+                            "type": "server_vad",
+                            "threshold": 0.5,
+                            "prefix_padding_ms": 300,
+                            "silence_duration_ms": 500,
+                            "create_response": True,
+                            "interrupt_response": True
+                        },
+                        "temperature": 0.8,
+                        "tracing": "auto",
+                        "input_audio_transcription": {
+                            "model": "gpt-4o-transcribe"
+                            },
+                        "tools": [
+                            {
+                                "type": "function",
+                                "name": "get_weather",
+                                "description": "Get the current weather...",
+                                "parameters": {
+                                    "type": "object",
+                                    "properties": {
+                                        "location": { "type": "string" }
+                                    },
+                                    "required": ["location"]
+                                }
+                            }
+                        ],
+                        "tool_choice": "auto",
+                    }}
         )
         print("Session started.")
 

@@ -51,6 +51,9 @@ except Exception as e:
     pplx_chat = None
     logger.warning(f"Perplexity chat not initialized: {e}")
 
+# Import the cloud storage manager
+from storage import CloudflareR2Storage
+
 # --- FastAPI App Initialization ---
 logger.info("Starting AI Education Platform API...")
 app = FastAPI(
@@ -68,40 +71,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- In-memory Storage for Simplicity ---
-# In a production environment, this should be replaced with a proper file storage solution like S3 or a persistent disk.
-class SimpleInMemoryStorage:
-    """A simple in-memory storage manager to mock file storage for the AI Tutor."""
-    def __init__(self):
-        self._storage: Dict[str, bytes] = {}
-        self.temp_dir = "temp_uploads"
-        os.makedirs(self.temp_dir, exist_ok=True)
-
-    async def save_file_async(self, file: UploadFile) -> str:
-        """Saves an uploaded file to a temporary local path and returns the path."""
-        # Ensure filename is secure and unique to prevent conflicts
-        safe_filename = f"{uuid.uuid4()}_{file.filename}"
-        file_path = os.path.join(self.temp_dir, safe_filename)
-        with open(file_path, "wb") as buffer:
-            buffer.write(await file.read())
-        logger.info(f"File '{file.filename}' saved to temporary path: {file_path}")
-        return file_path
-
-    async def get_file_content_bytes_async(self, storage_key: str) -> Optional[bytes]:
-        """Reads file content from the temporary local path."""
-        if os.path.exists(storage_key):
-            with open(storage_key, "rb") as f:
-                return f.read()
-        logger.error(f"File not found at storage key: {storage_key}")
-        return None
-
 # --- Global Objects and Initializations ---
 logger.info("Initializing global components...")
 
 try:
     # Initialize Storage Manager
-    storage_manager = SimpleInMemoryStorage()
-    logger.info("✅ In-memory storage manager initialized successfully.")
+    storage_manager = CloudflareR2Storage()
+    logger.info("✅ Cloudflare R2 storage manager initialized.")
 
     # Initialize Tutor Sessions Dictionary
     tutor_sessions: Dict[str, AsyncRAGTutor] = {}
@@ -155,18 +131,12 @@ async def voice_transcription_endpoint(audio_file: UploadFile = File(...)):
     try:
         logger.info(f"Processing voice transcription for file: {audio_file.filename}")
         
-        temp_audio_path = await storage_manager.save_file_async(audio_file)
         import io
-        audio_bytes = await storage_manager.get_file_content_bytes_async(temp_audio_path)
+        audio_bytes = await audio_file.read()
         audio_io = io.BytesIO(audio_bytes)
         audio_io.name = audio_file.filename
         
         transcription = await run_in_threadpool(transcribe_audio, audio_io)
-        
-        try:
-            os.remove(temp_audio_path)
-        except:
-            pass
         
         if transcription:
             return {
@@ -554,7 +524,6 @@ async def chatbot_endpoint(request: ChatbotRequest):
         
         Student Query: {request.query}
         
-        Please provide personalized assistance based on the student's learning progress, achievements, and current focus areas. 
         Consider their grade level ({student_data.grade}) and adapt your explanations accordingly.
         """
         
@@ -620,9 +589,17 @@ async def upload_documents_endpoint(session_id: str = Form(...), files: List[Upl
         storage_keys = []
         for file in files:
             if file.filename:
-                file_path = await storage_manager.save_file_async(file)
-                storage_keys.append(file_path)
-                logger.info(f"Saved file {file.filename} to {file_path}")
+                file_bytes = await file.read()
+                safe_filename = f"{uuid.uuid4()}_{file.filename}"
+                
+                # Upload to cloud storage. These are for the KB, so is_user_doc=False
+                success, storage_key = await storage_manager.upload_file_async(file_bytes, safe_filename, is_user_doc=False)
+                
+                if success:
+                    storage_keys.append(storage_key)
+                    logger.info(f"Uploaded file {file.filename} to cloud storage with key: {storage_key}")
+                else:
+                    logger.error(f"Failed to upload file {file.filename} to cloud storage.")
         
         if storage_keys:
             # Ingest documents into the tutor's knowledge base
@@ -630,13 +607,13 @@ async def upload_documents_endpoint(session_id: str = Form(...), files: List[Upl
             if success:
                 return {
                     "success": True,
-                    "message": f"Successfully uploaded and processed {len(files)} document(s)",
-                    "files_processed": len(files)
+                    "message": f"Successfully uploaded and processed {len(storage_keys)} document(s)",
+                    "files_processed": len(storage_keys)
                 }
             else:
                 raise HTTPException(status_code=500, detail="Failed to process uploaded documents")
         else:
-            raise HTTPException(status_code=400, detail="No valid files were uploaded")
+            raise HTTPException(status_code=400, detail="No valid files were successfully uploaded")
             
     except HTTPException:
         raise
