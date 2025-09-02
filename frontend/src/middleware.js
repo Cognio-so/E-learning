@@ -2,156 +2,53 @@ import { jwtVerify } from 'jose';
 import { NextResponse } from 'next/server';
 
 export async function middleware(req) {
-  const path = req.nextUrl.pathname;
+  const { pathname } = req.nextUrl;
   const accessToken = req.cookies.get('accessToken')?.value;
-  const refreshToken = req.cookies.get('refreshToken')?.value;
 
-  // Ensure we're working with HTTPS URLs in production
-  const baseUrl = req.nextUrl.clone();
-  
-  // Define public routes that don't require authentication
-  const publicRoutes = ['/', '/auth/login', '/auth/register', '/auth/verify'];
-  const isVerifyRoute = path.match(/^\/auth\/verify\/[^\/]+$/);
-  const isPublicRoute = publicRoutes.includes(path) || !!isVerifyRoute;
+  // Public routes that don't need authentication
+  const publicRoutes = ['/', '/auth/login', '/auth/register'];
+  const isVerifyRoute = pathname.startsWith('/auth/verify/');
+  const isPublicRoute = publicRoutes.includes(pathname) || isVerifyRoute;
 
-  // If it's a public route, allow access
+  // Allow ALL public routes (no redirects for authenticated users)
   if (isPublicRoute) {
-    // Only redirect authenticated users away from login/register pages
-    if (accessToken && (path === '/auth/login' || path === '/auth/register')) {
-      try {
-        const secret = new TextEncoder().encode(process.env.JWT_SECRET);
-        const { payload } = await jwtVerify(accessToken, secret, {
-          issuer: 'ED_TECH',
-        });
-
-        const dashboardPath = payload.role === 'student' ? '/student/dashboard' : '/teacher/dashboard';
-        const dashboardUrl = new URL(dashboardPath, baseUrl);
-        return NextResponse.redirect(dashboardUrl);
-      } catch (error) {
-        // Token is invalid, clear cookies and allow access to login
-        const response = NextResponse.next();
-        response.cookies.set('accessToken', '', { 
-          expires: new Date(0),
-          path: '/',
-          httpOnly: true,
-          secure: process.env.NODE_ENV === 'production',
-          sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax'
-        });
-        response.cookies.set('refreshToken', '', { 
-          expires: new Date(0),
-          path: '/',
-          httpOnly: true,
-          secure: process.env.NODE_ENV === 'production',
-          sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax'
-        });
-        return response;
-      }
-    }
-    
-    // For root path, redirect authenticated users to their dashboard
-    if (path === '/' && accessToken) {
-      try {
-        const secret = new TextEncoder().encode(process.env.JWT_SECRET);
-        const { payload } = await jwtVerify(accessToken, secret, {
-          issuer: 'ED_TECH',
-        });
-
-        const dashboardPath = payload.role === 'student' ? '/student/dashboard' : '/teacher/dashboard';
-        const dashboardUrl = new URL(dashboardPath, baseUrl);
-        return NextResponse.redirect(dashboardUrl);
-      } catch (error) {
-        // Token is invalid, allow access to home page
-        const response = NextResponse.next();
-        response.cookies.set('accessToken', '', { 
-          expires: new Date(0),
-          path: '/',
-          httpOnly: true,
-          secure: process.env.NODE_ENV === 'production',
-          sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax'
-        });
-        response.cookies.set('refreshToken', '', { 
-          expires: new Date(0),
-          path: '/',
-          httpOnly: true,
-          secure: process.env.NODE_ENV === 'production',
-          sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax'
-        });
-        return response;
-      }
-    }
-    
     return NextResponse.next();
   }
 
-  // Handle protected routes (student and teacher routes)
-  if (!accessToken && !refreshToken) {
-    const loginUrl = new URL('/auth/login', baseUrl);
-    return NextResponse.redirect(loginUrl);
+  // Check if user is authenticated for protected routes
+  if (!accessToken) {
+    return NextResponse.redirect(new URL('/auth/login', req.url));
   }
 
-  if (accessToken) {
-    try {
-      const secret = new TextEncoder().encode(process.env.JWT_SECRET);
-      const { payload } = await jwtVerify(accessToken, secret, {
-        issuer: 'ED_TECH',
-      });
+  // Verify JWT token for protected routes only
+  try {
+    const secret = new TextEncoder().encode(process.env.JWT_SECRET);
+    const { payload } = await jwtVerify(accessToken, secret, {
+      issuer: 'ED_TECH',
+    });
 
-      // Role-based access control
-      if (path.startsWith('/student/') && payload.role !== 'student') {
-        const teacherUrl = new URL('/teacher/dashboard', baseUrl);
-        return NextResponse.redirect(teacherUrl);
-      }
-      
-      if (path.startsWith('/teacher/') && payload.role !== 'teacher') {
-        const studentUrl = new URL('/student/dashboard', baseUrl);
-        return NextResponse.redirect(studentUrl);
-      }
-      
-      return NextResponse.next();
-
-    } catch (error) {
-      // Token is invalid
-      if (refreshToken) {
-        // Let the page handle token refresh
-        return NextResponse.next();
-      }
-      
-      // No refresh token, redirect to login
-      const loginUrl = new URL('/auth/login', baseUrl);
-      const response = NextResponse.redirect(loginUrl);
-      response.cookies.set('accessToken', '', { 
-        expires: new Date(0),
-        path: '/',
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax'
-      });
-      response.cookies.set('refreshToken', '', { 
-        expires: new Date(0),
-        path: '/',
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax'
-      });
-      return response;
+    // Role-based access control
+    const userRole = payload.role;
+    
+    if (pathname.startsWith('/student/') && userRole !== 'student') {
+      return NextResponse.redirect(new URL('/teacher/dashboard', req.url));
     }
-  }
+    
+    if (pathname.startsWith('/teacher/') && userRole !== 'teacher') {
+      return NextResponse.redirect(new URL('/student/dashboard', req.url));
+    }
 
-  // Has refresh token but no access token - let the page handle refresh
-  if (refreshToken) {
     return NextResponse.next();
-  }
 
-  const loginUrl = new URL('/auth/login', baseUrl);
-  return NextResponse.redirect(loginUrl);
+  } catch (error) {
+    // Invalid token - redirect to login
+    return NextResponse.redirect(new URL('/auth/login', req.url));
+  }
 }
 
 export const config = {
   matcher: [
     '/student/:path*',
-    '/teacher/:path*',
-    '/auth/login',
-    '/auth/register',
-    '/',
-  ],
+    '/teacher/:path*'
+  ]
 };

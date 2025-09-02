@@ -64,11 +64,11 @@ const MENU_ITEMS = [
     url: "/teacher/class-grouping",
     icon: UsersRound,
   },
-  {
-    title: "Reports",
-    url: "/teacher/reports",
-    icon: BarChart3,
-  },
+  // {
+  //   title: "Reports",
+  //   url: "/teacher/reports",
+  //   icon: BarChart3,
+  // },
   {
     title: "Voice-Coach",
     url: "/teacher/voice-coach",

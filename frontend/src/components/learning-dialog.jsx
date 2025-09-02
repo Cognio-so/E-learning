@@ -51,6 +51,9 @@ import useAuthStore from '@/store/useAuthStore'
 import useProgressStore from '@/store/useProgressStore'
 import { MarkdownStyles } from './chat/Markdown'
 
+// Question type normalization is now handled by the store
+// These helper functions are kept for reference but shouldn't be needed
+
 const gradients = {
   Math: 'from-yellow-300 via-orange-300 to-red-400',
   Science: 'from-green-300 via-blue-300 to-purple-400',
@@ -123,8 +126,8 @@ const LearningDialog = ({
     if (!resource) return 1
     
     switch (resource.resourceType) {
-      case 'slide': 
-        return resource.slides?.length || 1
+      case 'slides': 
+        return resource.slides?.length || resource.slideUrls?.length || 1
       case 'video': 
         return 1
       case 'comic': 
@@ -137,7 +140,16 @@ const LearningDialog = ({
       case 'content': 
         return resource.sections?.length || 1
       case 'assessment': 
-        return resource.questions?.length || 1
+        // Enhanced question validation for assessments
+        const questions = resource.questions || [];
+        if (Array.isArray(questions) && questions.length > 0) {
+          // Validate that questions have proper structure
+          const validQuestions = questions.filter(q => 
+            q && typeof q === 'object' && (q.question || q.text || q.content)
+          );
+          return validQuestions.length > 0 ? validQuestions.length : 1;
+        }
+        return 1
       case 'webSearch':
         return 1
       default: 
@@ -166,8 +178,54 @@ const LearningDialog = ({
       setProgress(initialProgress)
     }
     
-    // Fix title display - check all possible title fields
-    const resourceTitle = resource.title || resource.name || resource.instruction || 'Learning Resource'
+    // Enhanced title detection with comprehensive fallback logic
+    let resourceTitle = 'Learning Resource'; // Default fallback
+    
+    if (resource) {
+      // Debug logging to see what's available
+      console.log('Resource object for title detection:', {
+        title: resource.title,
+        name: resource.name,
+        instruction: resource.instruction,
+        topic: resource.topic,
+        subject: resource.subject,
+        description: resource.description,
+        content: resource.content
+      });
+      
+      // Try multiple title fields in order of preference
+      resourceTitle = resource.title || 
+                     resource.name || 
+                     resource.instruction || 
+                     resource.topic || 
+                     resource.subject || 
+                     resource.description || 
+                     resource.content || 
+                     'Learning Resource';
+      
+      // Clean up the title - remove any HTML tags and truncate if too long
+      if (typeof resourceTitle === 'string') {
+        resourceTitle = resourceTitle
+          .replace(/<[^>]*>/g, '') // Remove HTML tags
+          .replace(/&[^;]+;/g, ' ') // Replace HTML entities with spaces
+          .trim();
+        
+        // Truncate if too long
+        if (resourceTitle.length > 50) {
+          resourceTitle = resourceTitle.substring(0, 47) + '...';
+        }
+      } else {
+        // If title is not a string, convert to string or use default
+        resourceTitle = String(resourceTitle || 'Learning Resource');
+      }
+    }
+    
+    // Final validation - ensure we have a valid title
+    if (!resourceTitle || resourceTitle === 'undefined' || resourceTitle === 'null') {
+      resourceTitle = 'Learning Resource';
+    }
+    
+    console.log('Final resource title:', resourceTitle);
     toast.success(`Started learning ${resourceTitle}! 🚀`)
   }
 
@@ -303,10 +361,9 @@ const LearningDialog = ({
       }
     }
     
-    // Fallback: try to extract from question if it's MCQ
-    if (question.question && question.question.includes('A)') && question.question.includes('B)')) {
-      // This is a fallback - ideally solutions should be available
-      return 'Answer not available'
+    // Fallback: check for correctAnswer property on the question object itself
+    if (question.correctAnswer) {
+      return question.correctAnswer;
     }
     
     return 'Answer not available'
@@ -635,13 +692,13 @@ const LearningDialog = ({
 
   const renderAssessmentContent = () => {
     if (showResults && assessmentResults) {
-        return (
-              <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6">
-                <div className="text-center">
+      return (
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6">
+          <div className="text-center">
             <Award className="h-16 w-16 text-green-500 mx-auto mb-4" />
             <h4 className="text-2xl font-bold text-gray-800 dark:text-white mb-2">
               Assessment Complete! 🎉
-                  </h4>
+            </h4>
             <div className="text-4xl font-bold text-green-600 mb-4">
               {assessmentResults.score}%
             </div>
@@ -690,11 +747,11 @@ const LearningDialog = ({
                           </span>
                         </div>
                       )}
+                    </div>
                   </div>
-                </div>
                 )
               })}
-              </div>
+            </div>
             
             <Button 
               className="mt-6 rounded-xl bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white font-semibold shadow-lg"
@@ -702,100 +759,128 @@ const LearningDialog = ({
             >
               Close Assessment
             </Button>
-            </div>
-          </div>
-        )
-    }
-
-    if (!resource.questions || resource.questions.length === 0) {
-      return (
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6">
-          <div className="text-center">
-            <Gamepad2 className="h-16 w-16 text-red-500 mx-auto mb-4" />
-            <h4 className="text-lg font-semibold text-gray-800 dark:text-white mb-2">
-              Assessment Question {currentStep + 1}
-            </h4>
-            <p className="text-gray-600 dark:text-gray-300 mb-6">
-              {resource.description || resource.content || 'Interactive quiz and assessment questions'}
-            </p>
           </div>
         </div>
       )
     }
 
-    const currentQuestion = resource.questions[currentStep]
+    // Enhanced validation for assessment data
+    if (!resource.questions || !Array.isArray(resource.questions) || resource.questions.length === 0) {
+        // Try to parse from rawContent if available
+        if (resource.rawContent) {
+            console.log('No questions found, attempting to parse from rawContent');
+            // This should be handled by the store, but as a fallback
+            const parsedQuestions = parseRawContentToQuestions(resource.rawContent);
+            if (parsedQuestions.length > 0) {
+                resource.questions = parsedQuestions;
+            } else {
+                return (
+                    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6">
+                        <div className="text-center">
+                            <Gamepad2 className="h-16 w-16 text-red-500 mx-auto mb-4" />
+                            <h4 className="text-lg font-semibold text-gray-800 dark:text-white mb-2">
+                                Assessment Unavailable
+                            </h4>
+                            <p className="text-gray-600 dark:text-gray-300 mb-6">
+                                This assessment has no valid questions. Please contact your teacher.
+                            </p>
+                        </div>
+                    </div>
+                );
+            }
+        } else {
+            return (
+                <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6">
+                    <div className="text-center">
+                        <Gamepad2 className="h-16 w-16 text-red-500 mx-auto mb-4" />
+                        <h4 className="text-lg font-semibold text-gray-800 dark:text-white mb-2">
+                            Assessment Unavailable
+                        </h4>
+                        <p className="text-gray-600 dark:text-gray-300 mb-6">
+                            This assessment has no valid questions. Please contact your teacher.
+                        </p>
+                    </div>
+                </div>
+            );
+        }
+    }
+
+    const currentQuestion = resource.questions[currentStep];
     
     // Debug log to see the actual question structure
-    console.log('Current question data:', currentQuestion)
+    console.log('Current question data being rendered:', currentQuestion);
     
-    // Parse options from question text if options array is empty
-    let questionText = currentQuestion?.question || currentQuestion?.text || currentQuestion?.content || ''
-    let questionOptions = currentQuestion?.options || currentQuestion?.choices || currentQuestion?.answers || []
+    // Enhanced validation and normalization
+    const questionText = currentQuestion.question || '';
+    const questionOptions = currentQuestion.options || [];
+    let questionType = currentQuestion.type || 'mcq';
     
-    // Check if it's a True/False question
-    const isTrueFalse = questionText.toLowerCase().includes('true or false') || 
-                       questionText.toLowerCase().includes('true/false') ||
-                       questionText.toLowerCase().startsWith('true or false')
-    
-    // If it's True/False, add True and False options
-    if (isTrueFalse && questionOptions.length === 0) {
-      questionOptions = ['True', 'False']
-      // Remove "True or False:" from the question text
-      questionText = questionText.replace(/^true or false:\s*/i, '').trim()
-    }
-    // If options array is empty but question contains options (A), B), C), D)), parse them
-    else if (questionOptions.length === 0 && questionText.includes('A)') && questionText.includes('B)')) {
-      // Split by A), B), C), D) to extract options
-      const parts = questionText.split(/([A-D]\))/)
-      const cleanParts = []
-      const extractedOptions = []
-      
-      for (let i = 0; i < parts.length; i++) {
-        if (/^[A-D]\)$/.test(parts[i])) {
-          // This is an option marker (A), B), etc.)
-          if (i + 1 < parts.length) {
-            // Get the option text (everything until next option or end)
-            let optionText = parts[i + 1].trim()
-            // Remove any trailing text that might be part of next option
-            optionText = optionText.replace(/\s*[A-D]\)\s*.*$/, '').trim()
-            extractedOptions.push(optionText)
-          }
-        } else if (!/^[A-D]\)$/.test(parts[i - 1])) {
-          // This is not an option, keep it as question text
-          cleanParts.push(parts[i])
+    // Validate question type and fix if needed
+    if (questionType === 'text' || questionType === undefined) {
+        // Try to detect the correct type
+        if (questionOptions && questionOptions.length > 0) {
+            if (questionOptions.length === 2 && 
+                questionOptions.some(opt => opt.toLowerCase().includes('true')) &&
+                questionOptions.some(opt => opt.toLowerCase().includes('false'))) {
+                questionType = 'true_false';
+            } else if (questionOptions.length > 2) {
+                questionType = 'mcq';
+            } else {
+                questionType = 'mcq';
+            }
+        } else {
+            questionType = 'short_answer';
         }
-      }
-      
-      questionOptions = extractedOptions
-      questionText = cleanParts.join('').trim()
+        
+        // Update the question object
+        currentQuestion.type = questionType;
+        console.log(`Fixed question type from 'text' to '${questionType}'`);
     }
     
-    console.log('Parsed options:', questionOptions)
-    console.log('Clean question text:', questionText)
-    
-    // Determine question type properly
-    let questionType = 'mcq' // Default to MCQ
-    if (isTrueFalse) {
-      questionType = 'true_false'
-    } else if (currentQuestion?.type && currentQuestion.type !== 'mixed') {
-      questionType = currentQuestion.type
-    } else if (currentQuestion?.questionType) {
-      questionType = currentQuestion.questionType
-    } else if (questionOptions.length > 0) {
-      // If we have options, it's MCQ
-      questionType = 'mcq'
-    } else {
-      questionType = 'short_answer'
-    }
-    
+    // Validate that we have the required data
+    if (!questionText) {
+        console.error('Question has no text:', currentQuestion);
         return (
-              <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6">
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6">
                 <div className="text-center">
-                  <Gamepad2 className="h-16 w-16 text-red-500 mx-auto mb-4" />
-                  <h4 className="text-lg font-semibold text-gray-800 dark:text-white mb-4">
+                    <Gamepad2 className="h-16 w-16 text-red-500 mx-auto mb-4" />
+                    <h4 className="text-lg font-semibold text-gray-800 dark:text-white mb-2">
+                        Question Format Error
+                    </h4>
+                    <p className="text-gray-600 dark:text-gray-300 mb-6">
+                        This question has an invalid format. Please contact your teacher.
+                    </p>
+                </div>
+            </div>
+        );
+    }
+    
+    // Validate options for MCQ and True/False
+    if ((questionType === 'mcq' || questionType === 'true_false') && questionOptions.length === 0) {
+        console.error(`${questionType} question has no options:`, currentQuestion);
+        return (
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6">
+                <div className="text-center">
+                    <Gamepad2 className="h-16 w-16 text-red-500 mx-auto mb-4" />
+                    <h4 className="text-lg font-semibold text-gray-800 dark:text-white mb-2">
+                        Question Options Missing
+                    </h4>
+                    <p className="text-gray-600 dark:text-gray-300 mb-6">
+                        This {questionType === 'mcq' ? 'multiple choice' : 'true/false'} question has no answer options.
+                    </p>
+                </div>
+            </div>
+        );
+    }
+
+    return (
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6">
+        <div className="text-center">
+          <Gamepad2 className="h-16 w-16 text-red-500 mx-auto mb-4" />
+          <h4 className="text-lg font-semibold text-gray-800 dark:text-white mb-4">
             Question {currentStep + 1} of {resource.questions.length}
-                  </h4>
-          
+          </h4>
+      
           {/* Question Type Badge */}
           <div className="mb-4">
             <Badge className="bg-blue-100 text-blue-800 text-xs font-semibold">
@@ -822,7 +907,7 @@ const LearningDialog = ({
                   onClick={() => handleAssessmentAnswer(currentStep, option)}
                 >
                   <span className="font-semibold mr-3">{String.fromCharCode(65 + index)}.</span>
-                  {typeof option === 'string' ? option : option.text || option.option || option}
+                  {typeof option === 'string' ? option : option.text || option.option || ''}
                 </Button>
               ))}
             </div>
@@ -830,11 +915,11 @@ const LearningDialog = ({
           
           {/* True/False options */}
           {questionType === 'true_false' && (
-                  <div className="space-y-3">
-              {['True', 'False'].map((option) => (
-                      <Button
-                        key={option}
-                        variant="outline"
+            <div className="space-y-3">
+              {questionOptions.map((option) => (
+                <Button
+                  key={option}
+                  variant="outline"
                   className={`w-full justify-start text-left transition-all duration-200 ${
                     assessmentAnswers[currentStep] === option 
                       ? 'border-green-500 bg-green-50 text-green-800 hover:bg-green-100' 
@@ -844,9 +929,9 @@ const LearningDialog = ({
                 >
                   <span className="font-semibold mr-3">{option === 'True' ? 'A.' : 'B.'}</span>
                   {option}
-                      </Button>
-                    ))}
-                  </div>
+                </Button>
+              ))}
+            </div>
           )}
           
           {/* Short Answer input */}
@@ -863,12 +948,12 @@ const LearningDialog = ({
               </div>
               <div className="text-sm text-gray-500 text-left">
                 Write your answer in the box above. Be as detailed as needed.
-                </div>
               </div>
-          )}
             </div>
-          </div>
-        )
+          )}
+        </div>
+      </div>
+    )
   }
 
   const isCurrentQuestionAnswered = () => {
@@ -886,6 +971,9 @@ const LearningDialog = ({
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-[95vw] md:max-w-[1400px] max-h-[95vh] overflow-y-auto bg-white dark:bg-gray-800 rounded-3xl shadow-2xl border-0 p-0">
         <DialogHeader className="p-6 pb-4">
+          <DialogDescription className="sr-only">
+            Learning resource dialog for {resource?.title || 'educational content'}
+          </DialogDescription>
           <div className="flex items-center justify-between">
             <DialogTitle className="text-2xl font-bold text-gray-800 dark:text-white flex items-center gap-3">
               <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${getItemColor(resource.subject)} flex items-center justify-center text-white`}>
@@ -1054,5 +1142,4 @@ const LearningDialog = ({
     </Dialog>
   )
 }
-
-export default LearningDialog
+export default LearningDialog ;

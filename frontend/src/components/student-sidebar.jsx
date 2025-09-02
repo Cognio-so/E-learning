@@ -84,55 +84,15 @@ const navigationItems = [
     badge: null,
     gradient: kidGradients.orange,
   },
-
-  {
-    title: "Chat History",
-    url: "/student/chat-history",
-    icon: Clock,
-    badge: null,
-    gradient: kidGradients.blue,
-  }
 ]
 
 export function StudentSidebar() {
   const pathname = usePathname()
   const { user } = useAuthStore()
-  const { chatSessions, fetchChatSessions } = useChatStore();
 
   // Add this useEffect to load chat sessions
-  React.useEffect(() => {
-    if (user) {
-      fetchChatSessions(user._id).catch(console.error);
-    }
-  }, [user, fetchChatSessions]);
-
-  // Add this after the existing navigation items
-  const chatHistoryItems = chatSessions.slice(0, 5).map((session) => ({
-    title: session.title,
-    url: `/student/ai-tutor?session=${session.sessionId}`,
-    icon: MessageSquare,
-    badge: session.messageCount > 0 ? `${session.messageCount}` : null,
-    badgeVariant: "secondary",
-    gradient: kidGradients.blue,
-    subtitle: new Date(session.lastActivity).toLocaleDateString(),
-    isHistory: true
-  }));
-
-  // Update the navigation items array to include chat history
-  const allNavigationItems = [
-    ...navigationItems,
-    ...(chatHistoryItems.length > 0 ? [
-      {
-        title: "Chat History",
-        url: "#",
-        icon: Clock,
-        badge: null,
-        gradient: kidGradients.blue,
-        isHeader: true
-      },
-      ...chatHistoryItems
-    ] : [])
-  ];
+ 
+  
 
   return (
     
@@ -155,7 +115,7 @@ export function StudentSidebar() {
         <SidebarGroup>
           <SidebarGroupContent>
             <SidebarMenu className="space-y-2">
-              {allNavigationItems.map((item) => (
+              {navigationItems.map((item) => ( 
                 <SidebarMenuItem key={item.title}>
                   {item.isHeader ? (
                     <SidebarGroupLabel className="text-xs font-bold text-muted-foreground mb-2 px-1 mt-4">

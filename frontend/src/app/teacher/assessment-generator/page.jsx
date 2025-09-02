@@ -172,10 +172,12 @@ export default function AssessmentBuilderPage() {
 
   // Update the handleGenerate function to better process the response
   const handleGenerate = async () => {
-    if (!validateForm()) return;
+    if (!form.title || !form.subject || !form.topic) {
+      toast.error('Please fill in all required fields');
+      return;
+    }
 
     try {
-      // Prepare assessment data for Python API with teacher's grade
       const assessmentData = {
         ...form,
         grade: user?.grade || form.grade, // Use teacher's grade automatically
@@ -183,22 +185,43 @@ export default function AssessmentBuilderPage() {
       };
 
       console.log('Sending assessment data:', assessmentData);
-      await generateAssessment(assessmentData);
+      const result = await generateAssessment(assessmentData);
       
-      // Log the generated questions to debug
-      console.log('Generated questions:', generatedQuestions);
-      console.log('Generated solutions:', generatedSolutions);
-      
-      toast.success(`Generated ${Array.isArray(generatedQuestions) ? generatedQuestions.length : 0} questions successfully using AI!`);
+      // Enhanced question validation and logging
+      if (result && result.questions) {
+        console.log('Generated questions result:', result);
+        console.log('Questions count:', result.questions.length);
+        console.log('Questions structure:', result.questions);
+        
+        // Validate question structure
+        const validQuestions = result.questions.filter(q => 
+          q && typeof q === 'object' && q.question && q.question.trim() !== ''
+        );
+        
+        if (validQuestions.length === 0) {
+          toast.error('Generated questions have invalid structure. Please try again.');
+          return;
+        }
+        
+        toast.success(`Generated ${validQuestions.length} valid questions successfully using AI!`);
+      } else {
+        toast.error('No questions were generated. Please try again.');
+      }
     } catch (error) {
       console.error('Generation error:', error);
-      toast.error('Failed to generate questions');
+      toast.error(error.message || 'Failed to generate questions');
     }
   };
 
   const handleSave = async (status) => {
-    if (generatedQuestions.length === 0) {
-      toast.error('No questions to save');
+    // Enhanced validation before saving
+    const questionsToSave = generatedQuestions || [];
+    const validQuestions = questionsToSave.filter(q => 
+      q && typeof q === 'object' && q.question && q.question.trim() !== ''
+    );
+    
+    if (validQuestions.length === 0) {
+      toast.error('No valid questions to save. Please generate questions first.');
       return;
     }
 
@@ -207,9 +230,9 @@ export default function AssessmentBuilderPage() {
         ...form,
         grade: user?.grade || form.grade, // Use teacher's grade automatically
         status,
-        questions: generatedQuestions,
-        solutions: generatedSolutions,
-        rawContent: rawContent,
+        questions: validQuestions, // Use validated questions
+        solutions: generatedSolutions || [],
+        rawContent: rawContent || '',
       });
 
       toast.success(`Assessment ${status === 'draft' ? 'saved as draft' : 'published'} successfully!`);
@@ -892,12 +915,13 @@ export default function AssessmentBuilderPage() {
                     value={editingAssessment?.title || ''}
                     onChange={(e) => setEditingAssessment(prev => ({ ...prev, title: e.target.value }))}
                     placeholder="Assessment title"
+                    className="mt-2"
                   />
                 </div>
                 <div>
                   <Label htmlFor="editSubject">Subject *</Label>
                   <Select value={editingAssessment?.subject || ''} onValueChange={(value) => setEditingAssessment(prev => ({ ...prev, subject: value }))}>
-                    <SelectTrigger>
+                    <SelectTrigger className="mt-2">
                       <SelectValue placeholder="Select subject" />
                     </SelectTrigger>
                     <SelectContent>
@@ -917,11 +941,12 @@ export default function AssessmentBuilderPage() {
                     value={editingAssessment?.topic || ''}
                     onChange={(e) => setEditingAssessment(prev => ({ ...prev, topic: e.target.value }))}
                     placeholder="Primary topic"
+                    className="mt-2"
                   />
                 </div>
                 <div>
                   <Label htmlFor="editGrade">Grade</Label>
-                  <div className="h-10 px-3 py-2 border border-gray-300 rounded-md bg-gray-50 dark:bg-gray-700 dark:border-gray-600 flex items-center">
+                  <div className="h-10 px-3 py-2 border border-gray-300 rounded-md bg-gray-50 dark:bg-gray-700 dark:border-gray-600 flex items-center mt-2">
                     <span className="text-sm text-gray-600 dark:text-gray-300">
                       {user?.grade === 'K' ? 'Kindergarten' : `Grade ${user?.grade}`}
                     </span>
@@ -940,6 +965,7 @@ export default function AssessmentBuilderPage() {
                   onChange={(e) => setEditingAssessment(prev => ({ ...prev, description: e.target.value }))}
                   placeholder="Assessment description"
                   rows={3}
+                  className="mt-2"
                 />
               </div>
 
@@ -947,7 +973,7 @@ export default function AssessmentBuilderPage() {
                 <div>
                   <Label htmlFor="editDifficulty">Difficulty</Label>
                   <Select value={editingAssessment?.difficulty || 'Medium'} onValueChange={(value) => setEditingAssessment(prev => ({ ...prev, difficulty: value }))}>
-                    <SelectTrigger>
+                    <SelectTrigger className="mt-2">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -964,6 +990,7 @@ export default function AssessmentBuilderPage() {
                     type="number"
                     value={editingAssessment?.duration || '30'}
                     onChange={(e) => setEditingAssessment(prev => ({ ...prev, duration: e.target.value }))}
+                    className="mt-2"
                   />
                 </div>
               </div>
@@ -976,6 +1003,7 @@ export default function AssessmentBuilderPage() {
                   onChange={(e) => setEditingAssessment(prev => ({ ...prev, learningObjectives: e.target.value }))}
                   placeholder="What should students learn?"
                   rows={3}
+                  className="mt-2"
                 />
               </div>
 
@@ -986,6 +1014,7 @@ export default function AssessmentBuilderPage() {
                   value={editingAssessment?.anxietyTriggers || ''}
                   onChange={(e) => setEditingAssessment(prev => ({ ...prev, anxietyTriggers: e.target.value }))}
                   placeholder="e.g., time pressure, complex wording"
+                  className="mt-2"
                 />
               </div>
 
@@ -997,13 +1026,14 @@ export default function AssessmentBuilderPage() {
                   onChange={(e) => setEditingAssessment(prev => ({ ...prev, customPrompt: e.target.value }))}
                   placeholder="Any specific requirements..."
                   rows={3}
+                  className="mt-2"
                 />
               </div>
 
               <div>
                 <Label htmlFor="editLanguage">Language</Label>
                 <Select value={editingAssessment?.language || 'English'} onValueChange={(value) => setEditingAssessment(prev => ({ ...prev, language: value }))}>
-                  <SelectTrigger>
+                  <SelectTrigger className="mt-2">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -1030,7 +1060,16 @@ export default function AssessmentBuilderPage() {
                 Cancel
               </Button>
               <Button onClick={handleUpdateAssessment}>
-                Update Assessment
+                {
+                  isLoading ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Updating...
+                    </>
+                  ) : (
+                    'Update Assessment'
+                  )
+                }
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -1050,6 +1089,7 @@ export default function AssessmentBuilderPage() {
                   id="lessonTitle"
                   value={lessonData.title}
                   onChange={(e) => setLessonData(prev => ({ ...prev, title: e.target.value }))}
+                  className="mt-2 px-3 py-2 border border-gray-300 rounded-md bg-gray-50 dark:bg-gray-700 dark:border-gray-600"
                 />
               </div>
               <div>
@@ -1059,24 +1099,25 @@ export default function AssessmentBuilderPage() {
                   value={lessonData.description}
                   onChange={(e) => setLessonData(prev => ({ ...prev, description: e.target.value }))}
                   rows={3}
+                  className="mt-2 px-3 py-2 border border-gray-300 rounded-md bg-gray-50 dark:bg-gray-700 dark:border-gray-600"
                 />
               </div>
               <div>
                 <Label htmlFor="lessonSubject">Subject</Label>
                 <Select value={lessonData.subject} onValueChange={(value) => setLessonData(prev => ({ ...prev, subject: value }))}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select subject" />
+                  <SelectTrigger className="mt-2 px-3 py-2 border border-gray-300 rounded-md bg-gray-50 dark:bg-gray-700 dark:border-gray-600">
+                    <SelectValue placeholder="Select subject" className="mt-2 px-3 py-2 border border-gray-300 rounded-md bg-gray-50 dark:bg-gray-700 dark:border-gray-600" />
                   </SelectTrigger>
                   <SelectContent>
                     {subjects.map(subject => (
-                      <SelectItem key={subject.id} value={subject.id}>{subject.title}</SelectItem>
+                      <SelectItem key={subject.id} value={subject.id} className="mt-2 px-3 py-2 border border-gray-300 rounded-md bg-gray-50 dark:bg-gray-700 dark:border-gray-600">{subject.title}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
               <div>
                 <Label htmlFor="lessonGrade">Grade</Label>
-                <div className="h-10 px-3 py-2 border border-gray-300 rounded-md bg-gray-50 dark:bg-gray-700 dark:border-gray-600 flex items-center">
+                <div className="h-10 px-3 py-2 border border-gray-300 rounded-md bg-gray-50 dark:bg-gray-700 dark:border-gray-600 flex items-center mt-2">
                   <span className="text-sm text-gray-600 dark:text-gray-300">
                     {user?.grade === 'K' ? 'Kindergarten' : `Grade ${user?.grade}`}
                   </span>
@@ -1091,7 +1132,16 @@ export default function AssessmentBuilderPage() {
                 Cancel
               </Button>
               <Button onClick={handleCreateLesson}>
-                Create Lesson
+               {
+                isLoading ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Creating...
+                  </>
+                ) : (
+                  'Create Lesson'
+                )
+               }
               </Button>
             </DialogFooter>
           </DialogContent>

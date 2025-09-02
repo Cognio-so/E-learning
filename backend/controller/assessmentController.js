@@ -80,7 +80,16 @@ const getAssessmentById = async (req, res) => {
         if(!assessment) {
             return res.status(404).json({ message: "Assessment not found" });
         }
-        res.status(200).json({ assessment });
+        
+        const assessmentObj = assessment.toObject();
+        
+        // If questions array is empty but rawContent exists, parse it
+        if ((!assessmentObj.questions || assessmentObj.questions.length === 0) && 
+            assessmentObj.rawContent) {
+            assessmentObj.questions = parseRawAssessmentContent(assessmentObj.rawContent);
+        }
+        
+        res.status(200).json({ assessment: assessmentObj });
     } catch (error) {
         console.error("Error fetching assessment:", error);
         return res.status(500).json({ success: false, message: "Internal server error", error: error.message });
@@ -132,10 +141,108 @@ const deleteAssessment = async (req, res) => {
     }
 }
 
+// Helper function to parse raw assessment content into structured questions
+const parseRawAssessmentContent = (rawContent) => {
+    if (!rawContent || typeof rawContent !== 'string') {
+        return [];
+    }
+
+    const questions = [];
+    const lines = rawContent.split('\n').filter(line => line.trim());
+    
+    let currentQuestion = null;
+    let currentOptions = [];
+    let currentSolution = null;
+    
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        
+        // Check if this is a new question (starts with a number)
+        if (/^\d+\./.test(line)) {
+            // Save previous question if exists
+            if (currentQuestion) {
+                questions.push({
+                    ...currentQuestion,
+                    options: currentOptions,
+                    solution: currentSolution
+                });
+            }
+            
+            // Start new question
+            currentQuestion = {
+                question: line.replace(/^\d+\.\s*/, ''),
+                type: 'mcq', // Default type
+                correctAnswer: '',
+                explanation: ''
+            };
+            currentOptions = [];
+            currentSolution = null;
+            
+        } else if (line.startsWith('A)') || line.startsWith('B)') || line.startsWith('C)') || line.startsWith('D)')) {
+            // This is an option
+            const optionText = line.substring(2).trim();
+            if (optionText) {
+                currentOptions.push(optionText);
+            }
+            
+        } else if (line.startsWith('---') || line.startsWith('**Solutions**')) {
+            // Solutions section starts
+            break;
+            
+        } else if (line.startsWith('**') && line.includes('**')) {
+            // This might be a solution line
+            if (currentQuestion) {
+                currentQuestion.explanation = line.replace(/\*\*/g, '').trim();
+            }
+        }
+    }
+    
+    // Add the last question
+    if (currentQuestion) {
+        questions.push({
+            ...currentQuestion,
+            options: currentOptions,
+            solution: currentSolution
+        });
+    }
+    
+    // Determine question types based on content
+    questions.forEach((q, index) => {
+        if (q.question.toLowerCase().includes('true or false') || 
+            q.question.toLowerCase().includes('true/false')) {
+            q.type = 'true_false';
+            q.options = ['True', 'False'];
+        } else if (q.options && q.options.length > 0) {
+            q.type = 'mcq';
+        } else {
+            q.type = 'short_answer';
+        }
+        
+        // Generate unique ID
+        q.id = `q_${index}`;
+    });
+    
+    return questions;
+};
+
 const getAllAssessments = async (req, res) => {
     try {
         const assessments = await Assessment.find();
-        res.status(200).json({ assessments });
+        
+        // Parse raw content into structured questions for each assessment
+        const processedAssessments = assessments.map(assessment => {
+            const assessmentObj = assessment.toObject();
+            
+            // If questions array is empty but rawContent exists, parse it
+            if ((!assessmentObj.questions || assessmentObj.questions.length === 0) && 
+                assessmentObj.rawContent) {
+                assessmentObj.questions = parseRawAssessmentContent(assessmentObj.rawContent);
+            }
+            
+            return assessmentObj;
+        });
+        
+        res.status(200).json({ assessments: processedAssessments });
     } catch (error) {
         console.error("Error fetching all assessments:", error);
         return res.status(500).json({ success: false, message: "Internal server error", error: error.message });

@@ -34,7 +34,109 @@ import {
 import useAuthStore from '@/store/useAuthStore'
 import useProgressStore from '@/store/useProgressStore'
 
-// Achievement definitions - these define what achievements are available
+// Fun gradients for kids UI (matching dashboard theme)
+const kidGradients = {
+  purple: "from-violet-500 via-purple-500 to-indigo-500",
+  orange: "from-amber-400 via-orange-500 to-pink-500",
+  blue: "from-blue-400 via-cyan-500 to-sky-500",
+  green: "from-emerald-400 via-green-500 to-teal-500",
+  pink: "from-pink-400 via-rose-500 to-fuchsia-500",
+  yellow: "from-yellow-400 via-orange-400 to-red-500",
+  rainbow: "from-red-400 via-yellow-400 via-green-400 via-blue-400 to-purple-400"
+}
+
+// Animated background particles (fixed for SSR)
+const AnimatedBackground = () => {
+  // Use useEffect to access window only on client side
+  const [dimensions, setDimensions] = useState({ width: 1000, height: 1000 })
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setDimensions({
+        width: window.innerWidth,
+        height: window.innerHeight
+      })
+    }
+  }, [])
+
+  return (
+    <div className="fixed inset-0 pointer-events-none overflow-hidden">
+      <div className="absolute inset-0 bg-gradient-to-br from-violet-50 via-purple-50 to-fuchsia-50 dark:from-violet-950 dark:via-purple-950 dark:to-fuchsia-950" />
+      {[...Array(20)].map((_, i) => (
+        <motion.div
+          key={i}
+          className="absolute"
+          initial={{ 
+            x: Math.random() * dimensions.width, 
+            y: Math.random() * dimensions.height 
+          }}
+          animate={{ 
+            x: Math.random() * dimensions.width, 
+            y: Math.random() * dimensions.height,
+            rotate: [0, 360],
+            scale: [0.5, 1, 0.5]
+          }}
+          transition={{ 
+            duration: 10 + Math.random() * 10,
+            repeat: Infinity,
+            ease: "linear"
+          }}
+        >
+          <div className={`w-2 h-2 rounded-full opacity-60 ${
+            ['bg-violet-400', 'bg-purple-400', 'bg-fuchsia-400', 'bg-pink-400'][Math.floor(Math.random() * 4)]
+          }`} />
+        </motion.div>
+      ))}
+    </div>
+  )
+}
+
+// Floating emojis component (fixed for SSR)
+const FloatingEmojis = () => {
+  const [dimensions, setDimensions] = useState({ width: 1000, height: 1000 })
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setDimensions({
+        width: window.innerWidth,
+        height: window.innerHeight
+      })
+    }
+  }, [])
+
+  return (
+    <div className="fixed inset-0 pointer-events-none overflow-hidden">
+      {['🚀', '⭐', '✨', '🌟', '🎨', '👩‍🎓', '🔥'].map((emoji, i) => (
+        <motion.div
+          key={i}
+          className="absolute text-2xl"
+          initial={{ 
+            x: Math.random() * dimensions.width, 
+            y: Math.random() * dimensions.height,
+            opacity: 0
+          }}
+          animate={{ 
+            x: Math.random() * dimensions.width, 
+            y: Math.random() * dimensions.height,
+            opacity: [0, 1, 0],
+            scale: [0.5, 1.5, 0.5],
+            rotate: [0, 180, 360]
+          }}
+          transition={{ 
+            duration: 8 + Math.random() * 4,
+            repeat: Infinity,
+            ease: "easeInOut",
+            delay: i * 0.5
+          }}
+        >
+          {emoji}
+        </motion.div>
+      ))}
+    </div>
+  )
+}
+
+// Achievement definitions with exact dashboard colors
 const achievementDefinitions = [
   {
     id: 'first_lesson',
@@ -43,8 +145,9 @@ const achievementDefinitions = [
     icon: "🚀",
     points: 10,
     category: "beginner",
-    gradient: "from-yellow-400 via-orange-500 to-red-500",
-    bgGradient: "from-yellow-50 to-orange-50",
+    gradient: "from-yellow-50 via-orange-50 to-red-50 dark:from-yellow-950 dark:via-orange-950 dark:to-red-950",
+    borderColor: "border-yellow-200 dark:border-yellow-700",
+    textColor: "text-yellow-700",
     emoji: "🚀",
     condition: (progress) => progress.completedLessons >= 1
   },
@@ -55,8 +158,9 @@ const achievementDefinitions = [
     icon: "🌟",
     points: 25,
     category: "learning",
-    gradient: "from-blue-400 via-purple-500 to-pink-500",
-    bgGradient: "from-blue-50 to-purple-50",
+    gradient: "from-blue-50 via-cyan-50 to-teal-50 dark:from-blue-950 dark:via-cyan-950 dark:to-teal-950",
+    borderColor: "border-blue-200 dark:border-blue-700",
+    textColor: "text-blue-700",
     emoji: "📚",
     condition: (progress) => progress.completedLessons >= 5
   },
@@ -67,8 +171,9 @@ const achievementDefinitions = [
     icon: "⚡",
     points: 50,
     category: "assessment",
-    gradient: "from-green-400 via-teal-500 to-cyan-500",
-    bgGradient: "from-green-50 to-teal-50",
+    gradient: "from-green-50 via-emerald-50 to-teal-50 dark:from-green-950 dark:via-emerald-950 dark:to-teal-950",
+    borderColor: "border-green-200 dark:border-green-700",
+    textColor: "text-green-700",
     emoji: "💎",
     condition: (progress) => progress.perfectAssessments >= 3
   },
@@ -79,8 +184,9 @@ const achievementDefinitions = [
     icon: "⚡",
     points: 75,
     category: "speed",
-    gradient: "from-purple-400 via-pink-500 to-red-500",
-    bgGradient: "from-purple-50 to-pink-50",
+    gradient: "from-purple-50 via-pink-50 to-rose-50 dark:from-purple-950 dark:via-pink-950 dark:to-rose-950",
+    borderColor: "border-purple-200 dark:border-purple-700",
+    textColor: "text-purple-700",
     emoji: "🌈",
     condition: (progress) => progress.weeklyLessons >= 10
   },
@@ -91,8 +197,9 @@ const achievementDefinitions = [
     icon: "💎",
     points: 100,
     category: "excellence",
-    gradient: "from-indigo-400 via-purple-500 to-pink-500",
-    bgGradient: "from-indigo-50 to-purple-50",
+    gradient: "from-indigo-50 via-purple-50 to-violet-50 dark:from-indigo-950 dark:via-purple-950 dark:to-violet-950",
+    borderColor: "border-indigo-200 dark:border-indigo-700",
+    textColor: "text-indigo-700",
     emoji: "💎",
     condition: (progress) => progress.perfectAssessments >= 5
   },
@@ -103,8 +210,9 @@ const achievementDefinitions = [
     icon: "🌈",
     points: 200,
     category: "mastery",
-    gradient: "from-pink-400 via-red-500 to-yellow-500",
-    bgGradient: "from-pink-50 to-red-50",
+    gradient: "from-pink-50 via-rose-50 to-red-50 dark:from-pink-950 dark:via-rose-950 dark:to-red-950",
+    borderColor: "border-pink-200 dark:border-pink-700",
+    textColor: "text-pink-700",
     emoji: "🌈",
     condition: (progress) => progress.completedLessons >= 50
   },
@@ -115,8 +223,9 @@ const achievementDefinitions = [
     icon: "🔢",
     points: 150,
     category: "subject",
-    gradient: "from-orange-400 via-red-500 to-pink-500",
-    bgGradient: "from-orange-50 to-red-50",
+    gradient: "from-yellow-50 via-orange-50 to-red-50 dark:from-yellow-950 dark:via-orange-950 dark:to-red-950",
+    borderColor: "border-yellow-200 dark:border-yellow-700",
+    textColor: "text-yellow-700",
     emoji: "🔢",
     condition: (progress) => progress.subjectProgress?.math >= 10
   },
@@ -127,8 +236,9 @@ const achievementDefinitions = [
     icon: "🔬",
     points: 150,
     category: "subject",
-    gradient: "from-cyan-400 via-blue-500 to-indigo-500",
-    bgGradient: "from-cyan-50 to-blue-50",
+    gradient: "from-cyan-50 via-blue-50 to-indigo-50 dark:from-cyan-950 dark:via-blue-950 dark:to-indigo-950",
+    borderColor: "border-cyan-200 dark:border-cyan-700",
+    textColor: "text-cyan-700",
     emoji: "🔬",
     condition: (progress) => progress.subjectProgress?.science >= 10
   },
@@ -139,8 +249,9 @@ const achievementDefinitions = [
     icon: "📚",
     points: 125,
     category: "reading",
-    gradient: "from-emerald-400 via-green-500 to-teal-500",
-    bgGradient: "from-emerald-50 to-green-50",
+    gradient: "from-emerald-50 via-green-50 to-teal-50 dark:from-emerald-950 dark:via-green-950 dark:to-teal-950",
+    borderColor: "border-emerald-200 dark:border-emerald-700",
+    textColor: "text-emerald-700",
     emoji: "📚",
     condition: (progress) => progress.completedLessons >= 15
   },
@@ -151,33 +262,35 @@ const achievementDefinitions = [
     icon: "🎨",
     points: 100,
     category: "creative",
-    gradient: "from-violet-400 via-purple-500 to-fuchsia-500",
-    bgGradient: "from-violet-50 to-purple-50",
+    gradient: "from-violet-50 via-purple-50 to-fuchsia-50 dark:from-violet-950 dark:via-purple-950 dark:to-fuchsia-950",
+    borderColor: "border-violet-200 dark:border-violet-700",
+    textColor: "text-violet-700",
     emoji: "🎨",
     condition: (progress) => progress.subjectProgress?.art >= 8
   }
 ]
 
+// Enhanced Achievement Card with exact dashboard colors and styling
 const AchievementCard = ({ achievement, index }) => (
   <motion.div
-    initial={{ opacity: 0, y: 20, scale: 0.9 }}
-    animate={{ opacity: 1, y: 0, scale: 1 }}
+    initial={{ opacity: 0, scale: 0.8, y: 20 }}
+    animate={{ opacity: 1, scale: 1, y: 0 }}
     transition={{ delay: index * 0.1, type: "spring", stiffness: 100 }}
     whileHover={{ 
-      scale: 1.05, 
+      scale: 1.05,
       rotateY: 5,
       transition: { duration: 0.2 }
     }}
-    className="group"
+    className="group h-full"
   >
-    <Card className={`relative overflow-hidden transition-all duration-500 hover:shadow-2xl ${
+    <Card className={`relative overflow-hidden transition-all duration-500 hover:shadow-2xl border-0 rounded-3xl shadow-lg h-full flex flex-col ${
       achievement.unlocked 
-        ? `bg-gradient-to-br ${achievement.bgGradient} border-2 border-transparent bg-gradient-to-r ${achievement.gradient} bg-clip-border` 
-        : 'bg-gradient-to-br from-gray-50 to-slate-100 border-gray-200 dark:from-gray-800 dark:to-gray-900 dark:border-gray-700'
+        ? `${achievement.borderColor} shadow-xl` 
+        : `${achievement.borderColor} shadow-lg`
     }`}>
       
-      {/* Animated background elements */}
-      <div className="absolute inset-0 opacity-5">
+      {/* Enhanced animated background elements with exact dashboard colors */}
+      <div className="absolute inset-0 opacity-20 dark:opacity-10">
         <motion.div
           animate={{ 
             rotate: 360,
@@ -188,7 +301,7 @@ const AchievementCard = ({ achievement, index }) => (
             repeat: Infinity, 
             ease: "linear" 
           }}
-          className="absolute top-4 right-4 w-16 h-16"
+          className="absolute top-2 right-2 w-8 h-8 text-violet-400 dark:text-violet-300"
         >
           <Sparkles className="w-full h-full" />
         </motion.div>
@@ -202,77 +315,80 @@ const AchievementCard = ({ achievement, index }) => (
             repeat: Infinity, 
             ease: "easeInOut" 
           }}
-          className="absolute bottom-4 left-4 w-8 h-8"
+          className="absolute bottom-4 left-4 w-8 h-8 text-fuchsia-400 dark:text-fuchsia-300"
         >
           <Star className="w-full h-full" />
         </motion.div>
       </div>
       
-      <CardContent className="p-6 relative z-10">
-        <div className="flex items-start justify-between mb-4">
-          <motion.div 
-            className="text-5xl"
-            animate={achievement.unlocked ? {
-              scale: [1, 1.2, 1],
-              rotate: [0, 10, -10, 0]
-            } : {}}
-            transition={{ 
-              duration: 2, 
-              repeat: Infinity, 
-              ease: "easeInOut" 
-            }}
-          >
-            {achievement.icon}
-          </motion.div>
-          <Badge 
-            variant={achievement.unlocked ? "default" : "secondary"}
-            className={`${
-              achievement.unlocked 
-                ? `bg-gradient-to-r ${achievement.gradient} text-white shadow-lg` 
-                : 'bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
-            } font-bold text-sm px-3 py-1`}
-          >
-            {achievement.points} pts
-          </Badge>
-        </div>
-        
-        <h3 className={`text-xl font-bold mb-3 ${
-          achievement.unlocked 
-            ? `bg-gradient-to-r ${achievement.gradient} bg-clip-text text-transparent` 
-            : 'text-gray-500 dark:text-gray-400'
-        }`}>
-          {achievement.title}
-        </h3>
-        
-        <p className={`text-sm mb-4 leading-relaxed ${
-          achievement.unlocked ? 'text-gray-700 dark:text-gray-200' : 'text-gray-400 dark:text-gray-500'
-        }`}>
-          {achievement.description}
-        </p>
-        
-        <div className="space-y-3">
-          <div className="flex justify-between text-xs font-semibold">
-            <span className={achievement.unlocked ? 'text-green-600 dark:text-green-400' : 'text-gray-500'}>
-              Progress
-            </span>
-            <span className={achievement.unlocked ? 'text-green-600 dark:text-green-400' : 'text-gray-500'}>
-              {achievement.progress}%
-            </span>
-          </div>
-          <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3 overflow-hidden">
-            <motion.div
-              className={`h-3 rounded-full ${
+      <CardContent className="p-6 relative z-10 flex-1 flex flex-col justify-between">
+        <div className="space-y-4">
+          <div className="flex items-start justify-between mb-4">
+            <motion.div 
+              className="text-5xl"
+              animate={achievement.unlocked ? {
+                scale: [1, 1.1, 1],
+                rotate: [0, 5, -5, 0]
+              } : {}}
+              transition={{ 
+                duration: 3, 
+                repeat: Infinity, 
+                ease: "easeInOut" 
+              }}
+            >
+              {achievement.icon}
+            </motion.div>
+            <Badge 
+              variant={achievement.unlocked ? "default" : "secondary"}
+              className={`${
                 achievement.unlocked 
-                  ? `bg-gradient-to-r ${achievement.gradient}` 
-                  : 'bg-gradient-to-r from-gray-300 to-gray-400'
-              } shadow-lg`}
-              initial={{ width: 0 }}
-              animate={{ width: `${achievement.progress}%` }}
-              transition={{ delay: 0.5, duration: 1.5, ease: "easeOut" }}
-            />
+                  ? `bg-gradient-to-r ${achievement.gradient} text-white border-0 text-xs font-bold shadow-lg` 
+                  : 'bg-white/80 dark:bg-gray-700/80 text-gray-800 dark:text-gray-200 border border-gray-200 dark:border-gray-600 text-xs font-bold backdrop-blur-sm'
+              } px-3 py-1`}
+            >
+              {achievement.points} pts
+            </Badge>
+          </div>
+          
+          <h3 className={`text-xl font-bold mb-3 ${
+            achievement.unlocked 
+              ? `bg-gradient-to-r ${achievement.gradient} bg-clip-text text-transparent` 
+              : 'text-gray-800 dark:text-white'
+          }`}>
+            {achievement.title}
+          </h3>
+          
+          <p className={`text-sm mb-4 leading-relaxed ${
+            achievement.unlocked ? `${achievement.textColor}` : 'text-gray-700 dark:text-gray-300'
+          }`}>
+            {achievement.description}
+          </p>
+          
+          <div className="space-y-3">
+            <div className="flex items-center justify-between text-sm font-bold">
+              <span className={achievement.unlocked ? `${achievement.textColor}` : 'text-gray-700 dark:text-gray-300'}>
+                Progress
+              </span>
+              <span className={achievement.unlocked ? `${achievement.textColor}` : 'text-gray-700 dark:text-gray-300'}>
+                {achievement.progress}%
+              </span>
+            </div>
+            <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-3 overflow-hidden">
+              <motion.div
+                className={`h-3 rounded-full ${
+                  achievement.unlocked 
+                    ? `bg-gradient-to-r ${achievement.gradient}` 
+                    : `bg-gradient-to-r ${achievement.gradient} opacity-60`
+                } shadow-lg`}
+                initial={{ width: 0 }}
+                animate={{ width: `${achievement.progress}%` }}
+                transition={{ delay: 0.5, duration: 1.5, ease: "easeOut" }}
+              />
+            </div>
           </div>
         </div>
         
+        {/* Enhanced celebration elements with dark theme */}
         {achievement.unlocked && (
           <motion.div
             initial={{ scale: 0, rotate: -180 }}
@@ -281,7 +397,7 @@ const AchievementCard = ({ achievement, index }) => (
             className="absolute top-3 right-3"
           >
             <div className="relative">
-              <CheckCircle className="w-8 h-8 text-green-500 drop-shadow-lg" />
+              <CheckCircle className="w-8 h-8 text-green-500 dark:text-green-400 drop-shadow-lg" />
               <motion.div
                 animate={{ 
                   scale: [1, 1.5, 1],
@@ -292,7 +408,7 @@ const AchievementCard = ({ achievement, index }) => (
                   repeat: Infinity, 
                   ease: "easeInOut" 
                 }}
-                className="absolute inset-0 bg-green-500 rounded-full opacity-20"
+                className="absolute inset-0 bg-green-500 dark:bg-green-400 rounded-full opacity-20"
               />
             </div>
           </motion.div>
@@ -442,9 +558,12 @@ export default function Achievements() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-indigo-50 dark:from-gray-900 dark:via-purple-900 dark:to-indigo-900">
-      <div className="container mx-auto p-6 space-y-8">
-        {/* Animated Header */}
+    <div className="min-h-screen bg-gradient-to-br from-violet-50 via-pink-50 to-indigo-50 dark:from-violet-950 dark:via-purple-950 dark:to-indigo-950 relative overflow-hidden">
+      <AnimatedBackground />
+      <FloatingEmojis />
+      
+      <div className="relative z-10 container mx-auto p-6 space-y-8">
+        {/* Animated Header with dark theme */}
         <motion.div
           initial={{ opacity: 0, y: -30 }}
           animate={{ opacity: 1, y: 0 }}
@@ -452,7 +571,7 @@ export default function Achievements() {
         >
           <div className="relative">
             <motion.h1 
-              className="text-5xl md:text-6xl font-bold bg-gradient-to-r from-yellow-400 via-orange-500 to-red-500 bg-clip-text text-transparent"
+              className="text-5xl md:text-6xl font-black bg-gradient-to-r from-violet-600 via-purple-600 to-fuchsia-600 dark:from-violet-400 dark:via-purple-400 dark:to-fuchsia-400 bg-clip-text text-transparent"
               animate={{ 
                 backgroundPosition: ['0% 50%', '100% 50%', '0% 50%']
               }}
@@ -465,7 +584,7 @@ export default function Achievements() {
                Achievements 🏆
             </motion.h1>
             
-            {/* Floating stars */}
+            {/* Floating stars with dark theme */}
             <motion.div
               animate={{ 
                 rotate: 360,
@@ -520,16 +639,17 @@ export default function Achievements() {
           </motion.p>
         </motion.div>
 
-        {/* Enhanced Stats Cards */}
+        {/* Enhanced Stats Cards with dark theme */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           <motion.div
             initial={{ opacity: 0, scale: 0.8, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             transition={{ delay: 0.1, type: "spring" }}
             whileHover={{ scale: 1.05 }}
+            className="h-full"
           >
-            <Card className="bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 border-2 border-blue-200 dark:from-blue-900/20 dark:via-indigo-900/20 dark:to-purple-900/20 dark:border-blue-700 shadow-xl">
-              <CardContent className="p-6 text-center">
+            <Card className="bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 dark:from-blue-950 dark:via-indigo-950 dark:to-purple-950 border-0 rounded-3xl shadow-xl h-full">
+              <CardContent className="p-6 text-center relative h-full flex flex-col justify-center">
                 <motion.div 
                   className="text-4xl mb-3"
                   animate={{ 
@@ -544,7 +664,7 @@ export default function Achievements() {
                 >
                   🚀
                 </motion.div>
-                <div className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
+                <div className="text-3xl font-black bg-gradient-to-r from-blue-600 to-indigo-600 dark:from-blue-400 dark:to-indigo-400 bg-clip-text text-transparent">
                   {stats.achievementsUnlocked}
                 </div>
                 <div className="text-sm text-gray-600 dark:text-gray-300 font-medium">
@@ -559,9 +679,10 @@ export default function Achievements() {
             animate={{ opacity: 1, scale: 1, y: 0 }}
             transition={{ delay: 0.2, type: "spring" }}
             whileHover={{ scale: 1.05 }}
+            className="h-full"
           >
-            <Card className="bg-gradient-to-br from-green-50 via-emerald-50 to-teal-50 border-2 border-green-200 dark:from-green-900/20 dark:via-emerald-900/20 dark:to-teal-900/20 dark:border-green-700 shadow-xl">
-              <CardContent className="p-6 text-center">
+            <Card className="bg-gradient-to-br from-green-50 via-emerald-50 to-teal-50 dark:from-green-950 dark:via-emerald-950 dark:to-teal-950 border-0 rounded-3xl shadow-xl h-full">
+              <CardContent className="p-6 text-center relative h-full flex flex-col justify-center">
                 <motion.div 
                   className="text-4xl mb-3"
                   animate={{ 
@@ -576,7 +697,7 @@ export default function Achievements() {
                 >
                   ⚡
                 </motion.div>
-                <div className="text-3xl font-bold bg-gradient-to-r from-green-600 to-emerald-600 bg-clip-text text-transparent">
+                <div className="text-3xl font-black bg-gradient-to-r from-green-600 to-emerald-600 dark:from-green-400 dark:to-emerald-400 bg-clip-text text-transparent">
                   {stats.totalPoints}
                 </div>
                 <div className="text-sm text-gray-600 dark:text-gray-300 font-medium">
@@ -591,9 +712,10 @@ export default function Achievements() {
             animate={{ opacity: 1, scale: 1, y: 0 }}
             transition={{ delay: 0.3, type: "spring" }}
             whileHover={{ scale: 1.05 }}
+            className="h-full"
           >
-            <Card className="bg-gradient-to-br from-purple-50 via-pink-50 to-red-50 border-2 border-purple-200 dark:from-purple-900/20 dark:via-pink-900/20 dark:to-red-900/20 dark:border-purple-700 shadow-xl">
-              <CardContent className="p-6 text-center">
+            <Card className="bg-gradient-to-br from-purple-50 via-pink-50 to-red-50 dark:from-purple-950 dark:via-pink-950 dark:to-red-950 border-0 rounded-3xl shadow-xl h-full">
+              <CardContent className="p-6 text-center relative h-full flex flex-col justify-center">
                 <motion.div 
                   className="text-4xl mb-3"
                   animate={{ 
@@ -608,7 +730,7 @@ export default function Achievements() {
                 >
                   🌈
                 </motion.div>
-                <div className="text-3xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
+                <div className="text-3xl font-black bg-gradient-to-r from-purple-600 to-pink-600 dark:from-purple-400 dark:to-pink-400 bg-clip-text text-transparent">
                   {stats.streak}
                 </div>
                 <div className="text-sm text-gray-600 dark:text-gray-300 font-medium">
@@ -623,9 +745,10 @@ export default function Achievements() {
             animate={{ opacity: 1, scale: 1, y: 0 }}
             transition={{ delay: 0.4, type: "spring" }}
             whileHover={{ scale: 1.05 }}
+            className="h-full"
           >
-            <Card className="bg-gradient-to-br from-yellow-50 via-orange-50 to-red-50 border-2 border-yellow-200 dark:from-yellow-900/20 dark:via-orange-900/20 dark:to-red-900/20 dark:border-yellow-700 shadow-xl">
-              <CardContent className="p-6 text-center">
+            <Card className="bg-gradient-to-br from-yellow-50 via-orange-50 to-red-50 dark:from-yellow-950 dark:via-orange-950 dark:to-red-950 border-0 rounded-3xl shadow-xl h-full">
+              <CardContent className="p-6 text-center relative h-full flex flex-col justify-center">
                 <motion.div 
                   className="text-4xl mb-3"
                   animate={{ 
@@ -640,7 +763,7 @@ export default function Achievements() {
                 >
                   💎
                 </motion.div>
-                <div className="text-3xl font-bold bg-gradient-to-r from-yellow-600 to-orange-600 bg-clip-text text-transparent">
+                <div className="text-3xl font-black bg-gradient-to-r from-yellow-600 to-orange-600 dark:from-yellow-400 dark:to-orange-400 bg-clip-text text-transparent">
                   Level {stats.level}
                 </div>
                 <div className="text-sm text-gray-600 dark:text-gray-300 font-medium">
@@ -651,9 +774,9 @@ export default function Achievements() {
           </motion.div>
         </div>
 
-        {/* Enhanced Tabs */}
+        {/* Enhanced Tabs with dark theme */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="grid w-full grid-cols-6 bg-gradient-to-r from-blue-100 via-purple-100 to-pink-100 dark:from-blue-900 dark:via-purple-900 dark:to-pink-900 border-2 border-purple-200 dark:border-purple-700 shadow-lg">
+          <TabsList className="grid w-full grid-cols-6 bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm rounded-2xl p-1 shadow-lg">
             {[
               { value: 'all', label: 'All', count: achievements.length },
               { value: 'beginner', label: 'Beginner', count: achievements.filter(a => a.category === 'beginner').length },
@@ -665,7 +788,7 @@ export default function Achievements() {
               <TabsTrigger 
                 key={tab.value}
                 value={tab.value} 
-                className="data-[state=active]:bg-white dark:data-[state=active]:bg-gray-800 data-[state=active]:shadow-lg font-semibold transition-all duration-300"
+                className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-violet-500 data-[state=active]:to-purple-500 data-[state=active]:text-white data-[state=active]:shadow-lg font-semibold transition-all duration-300 rounded-xl text-gray-700 dark:text-gray-300"
               >
                 <span className="mr-2">{categoryIcons[tab.value]}</span>
                 {tab.label} ({tab.count})
@@ -695,13 +818,13 @@ export default function Achievements() {
           </TabsContent>
         </Tabs>
 
-        {/* Enhanced Recent Activity */}
+        {/* Enhanced Recent Activity with dark theme */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.5 }}
         >
-          <Card className="bg-gradient-to-br from-indigo-50 via-purple-50 to-pink-50 border-2 border-indigo-200 dark:from-indigo-900/20 dark:via-purple-900/20 dark:to-pink-900/20 dark:border-indigo-700 shadow-xl">
+          <Card className="bg-gradient-to-br from-indigo-50 via-purple-50 to-pink-50 dark:from-indigo-950 dark:via-purple-950 dark:to-pink-950 border-0 rounded-3xl shadow-xl">
             <CardHeader>
               <CardTitle className="flex items-center gap-3 text-indigo-700 dark:text-indigo-300 text-xl">
                 <motion.div
@@ -728,7 +851,7 @@ export default function Achievements() {
                     initial={{ opacity: 0, x: -20 }}
                     animate={{ opacity: 1, x: 0 }}
                     transition={{ delay: index * 0.1 }}
-                    className="flex items-center gap-4 p-4 bg-white/70 dark:bg-gray-800/70 rounded-xl backdrop-blur-sm border border-white/20 dark:border-gray-700/20 hover:bg-white/90 dark:hover:bg-gray-800/90 transition-all duration-300"
+                    className="flex items-center gap-4 p-4 bg-white/70 dark:bg-gray-800/70 rounded-2xl backdrop-blur-sm border border-white/20 dark:border-gray-700/20 hover:bg-white/90 dark:hover:bg-gray-800/90 transition-all duration-300"
                   >
                     <motion.div 
                       className="text-3xl"

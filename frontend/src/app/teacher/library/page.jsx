@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Wand2, Upload, Plus, BarChart3, Search, X } from "lucide-react";
+import { Wand2, Upload, Plus, BarChart3, Search, X, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
@@ -41,10 +41,10 @@ export default function TeacherLibrary() {
 
   const [activeType, setActiveType] = useState("All");
   const [preview, setPreview] = useState(null); // holds normalized resource { type, doc, ... }
-  
   // Add lesson dialog state
   const [lessonDialogOpen, setLessonDialogOpen] = useState(false);
   const [selectedResourceForLesson, setSelectedResourceForLesson] = useState(null);
+
   const [lessonData, setLessonData] = useState({
     title: '',
     description: '',
@@ -85,7 +85,7 @@ export default function TeacherLibrary() {
   } = useAssessmentStore();
 
   // Add lesson store
-  const { createLesson, addResourceToLesson } = useLessonStore();
+  const { createLesson, addResourceToLesson, isLoading } = useLessonStore();
 
   useEffect(() => {
     let cancelled = false;
@@ -830,7 +830,16 @@ export default function TeacherLibrary() {
         onClick={handleCreateLessonWithResource}
         className="bg-gradient-to-r from-pink-500 to-violet-500 text-white"
       >
-        Create Lesson
+        {
+          isLoading ? (
+            <>
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              Creating...
+            </>
+          ) : (
+            'Create Lesson'
+          )
+        }
       </Button>
     </DialogFooter>
   </DialogContent>
