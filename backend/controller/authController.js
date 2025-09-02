@@ -115,7 +115,17 @@ const login = async (req, res) => {
         user.refreshToken = refreshToken;
         await user.save();
         
+        // Debug logging
+        console.log(' Setting cookies:', {
+            accessTokenLength: accessToken.length,
+            refreshTokenLength: refreshToken.length,
+            userRole: user.role
+        });
+        
         setCookies(res, accessToken, refreshToken);
+        
+        // Debug: Check if cookies were set
+        console.log('🍪 Response cookies:', res.getHeaders()['set-cookie']);
 
         return res.status(200).json({ 
             success: true, 
