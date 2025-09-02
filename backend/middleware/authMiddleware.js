@@ -3,7 +3,13 @@ const User = require('../models/userModel');
 
 const protectRoute = async (req, res, next) => {
     try {
-        const token = req.cookies.accessToken;
+        // Try to get token from Authorization header first
+        let token = req.headers.authorization?.replace('Bearer ', '');
+        
+        // Fallback to cookies if header not found
+        if (!token) {
+            token = req.cookies.accessToken;
+        }
         
         if (!token) {
             return res.status(401).json({ 

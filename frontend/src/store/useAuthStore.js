@@ -5,7 +5,16 @@ import axios from "axios";
 
 const axiosInstance = axios.create({
     baseURL: process.env.NEXT_PUBLIC_API_URL,
-    withCredentials: true,
+    withCredentials: false, // Change to false
+});
+
+// Add request interceptor to include token in header
+axiosInstance.interceptors.request.use((config) => {
+    const token = localStorage.getItem('accessToken');
+    if (token) {
+        config.headers.Authorization = `Bearer ${token}`;
+    }
+    return config;
 });
 
 let refreshInterval = null;
@@ -112,6 +121,7 @@ const useAuthStore = create(
 
             clearAuth: () => {
                 clearTokenManagement();
+                localStorage.removeItem('accessToken'); // Clear token
                 set({ 
                     user: null, 
                     isAuthenticated: false, 
@@ -145,15 +155,16 @@ const useAuthStore = create(
                 try {
                     const response = await axiosInstance.post("/api/auth/login", formData);
                     if (response.status === 200) {
+                        // Store token in localStorage
+                        localStorage.setItem('accessToken', response.data.accessToken);
+                        
                         set({ 
                             user: response.data.user, 
                             isAuthenticated: true,
                             isLoading: false 
                         });
                         
-                        // Start automatic token management
                         setupTokenManagement(get().refreshToken, get().clearAuth);
-                        
                         return response.data;
                     }
                 } catch (error) {
@@ -230,15 +241,14 @@ const useAuthStore = create(
 
             refreshToken: async () => {
                 try {
-                    const response = await axiosInstance.post(
-                        "/api/auth/refresh",
-                        {},
-                        { 
-                            timeout: 10000 // Add timeout
+                    const response = await axiosInstance.post("/api/auth/refresh", {}, {
+                        headers: {
+                            Authorization: `Bearer ${localStorage.getItem('refreshToken')}`
                         }
-                    );
+                    });
                     
                     if (response.status === 200) {
+                        localStorage.setItem('accessToken', response.data.accessToken);
                         set({ 
                             user: response.data.user, 
                             isAuthenticated: true 
@@ -247,7 +257,6 @@ const useAuthStore = create(
                     }
                 } catch (error) {
                     console.error('Token refresh failed:', error);
-                    // Clear auth on refresh failure
                     get().clearAuth();
                     throw error;
                 }
