@@ -231,7 +231,10 @@ const useAuthStore = create(
                     const response = await axios.post(
                         `${process.env.NEXT_PUBLIC_API_URL}/api/auth/refresh`,
                         {},
-                        { withCredentials: true }
+                        { 
+                            withCredentials: true,
+                            timeout: 10000 // Add timeout
+                        }
                     );
                     
                     if (response.status === 200) {
@@ -243,6 +246,7 @@ const useAuthStore = create(
                     }
                 } catch (error) {
                     console.error('Token refresh failed:', error);
+                    // Clear auth on refresh failure
                     get().clearAuth();
                     throw error;
                 }

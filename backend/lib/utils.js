@@ -22,25 +22,22 @@ const generateToken = (userId, role, email) => {
 const setCookies = (res, accessToken, refreshToken) => {
     const isProduction = process.env.NODE_ENV === 'production';
     
-    // Common cookie options for production
+    // Common cookie options
     const cookieOptions = {
         httpOnly: true,
-        secure: isProduction, // Only secure in production
-        sameSite: isProduction ? 'none' : 'lax', // 'none' for cross-site in production
+        secure: isProduction,
+        sameSite: isProduction ? 'none' : 'lax',
         path: '/',
-        domain: isProduction ? '.vercel.app' : undefined, // Allow subdomain sharing in production
     };
 
-    // Access token cookie (15 minutes)
     res.cookie('accessToken', accessToken, {
         ...cookieOptions,
-        maxAge: 15 * 60 * 1000, // 15 minutes
+        maxAge: 15 * 60 * 1000, 
     });
 
-    // Refresh token cookie (7 days)
     res.cookie('refreshToken', refreshToken, {
         ...cookieOptions,
-        maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+        maxAge: 7 * 24 * 60 * 60 * 1000, 
     });
 }
 

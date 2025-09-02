@@ -20,7 +20,7 @@ app.use(cors({
     origin: [
         process.env.FRONTEND_URL,
         'https://e-learning-frontend-navy.vercel.app',
-        'http://localhost:3000' // for local development
+        'http://localhost:3000'
     ],
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],

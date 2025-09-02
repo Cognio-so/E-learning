@@ -1,4 +1,3 @@
-import { jwtVerify } from 'jose';
 import { NextResponse } from 'next/server';
 
 export async function middleware(req) {
@@ -20,30 +19,9 @@ export async function middleware(req) {
     return NextResponse.redirect(new URL('/auth/login', req.url));
   }
 
-  // Verify JWT token for protected routes only
-  try {
-    const secret = new TextEncoder().encode(process.env.JWT_SECRET);
-    const { payload } = await jwtVerify(accessToken, secret, {
-      issuer: 'ED_TECH',
-    });
-
-    // Role-based access control
-    const userRole = payload.role;
-    
-    if (pathname.startsWith('/student/') && userRole !== 'student') {
-      return NextResponse.redirect(new URL('/teacher/dashboard', req.url));
-    }
-    
-    if (pathname.startsWith('/teacher/') && userRole !== 'teacher') {
-      return NextResponse.redirect(new URL('/student/dashboard', req.url));
-    }
-
-    return NextResponse.next();
-
-  } catch (error) {
-    // Invalid token - redirect to login
-    return NextResponse.redirect(new URL('/auth/login', req.url));
-  }
+  // Don't verify JWT in frontend middleware - let the backend handle it
+  // Just check if token exists
+  return NextResponse.next();
 }
 
 export const config = {
