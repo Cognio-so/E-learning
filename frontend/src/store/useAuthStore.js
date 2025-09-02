@@ -217,9 +217,11 @@ const useAuthStore = create(
                     }
                 } catch (error) {
                     set({ isLoading: false });
+                    console.error('getUser error:', error.response?.status, error.response?.data);
+                    
                     if (error.response?.status === 401) {
+                        console.log('401 error - clearing auth');
                         get().clearAuth();
-                        // Don't throw error for 401, let the page handle it
                         return null;
                     }
                     throw error;
@@ -228,11 +230,10 @@ const useAuthStore = create(
 
             refreshToken: async () => {
                 try {
-                    const response = await axios.post(
-                        `${process.env.NEXT_PUBLIC_API_URL}/api/auth/refresh`,
+                    const response = await axiosInstance.post(
+                        "/api/auth/refresh",
                         {},
                         { 
-                            withCredentials: true,
                             timeout: 10000 // Add timeout
                         }
                     );
