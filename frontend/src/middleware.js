@@ -6,7 +6,7 @@ export async function middleware(req) {
   const accessToken = req.cookies.get('accessToken')?.value;
 
   // Public routes that don't need authentication
-  const publicRoutes = ['/', '/auth/login', '/auth/register'];
+  const publicRoutes = ['/', '/auth/login', '/auth/register', '/auth/verify'];
   const isVerifyRoute = pathname.startsWith('/auth/verify/');
   const isPublicRoute = publicRoutes.includes(pathname) || isVerifyRoute;
 

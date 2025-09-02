@@ -17,9 +17,13 @@ const chatRoutes = require("./routes/chatRoute");
 const app = express();
 
 app.use(cors({
-    origin: process.env.FRONTEND_URL,
+    origin: [
+        process.env.FRONTEND_URL,
+        'https://e-learning-frontend-navy.vercel.app',
+        'http://localhost:3000' // for local development
+    ],
     credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS' ,'PATCH'],
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin', 'Access-Control-Request-Method', 'Access-Control-Request-Headers'],
 }));
 
