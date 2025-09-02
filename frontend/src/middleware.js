@@ -9,7 +9,7 @@ export async function middleware(req) {
   const isVerifyRoute = pathname.startsWith('/auth/verify/');
   const isPublicRoute = publicRoutes.includes(pathname) || isVerifyRoute;
 
-  // Allow ALL public routes (no redirects for authenticated users)
+  // Allow public routes
   if (isPublicRoute) {
     return NextResponse.next();
   }
@@ -19,14 +19,15 @@ export async function middleware(req) {
     return NextResponse.redirect(new URL('/auth/login', req.url));
   }
 
-  // Don't verify JWT in frontend middleware - let the backend handle it
-  // Just check if token exists
+  // Allow access to protected routes
   return NextResponse.next();
 }
 
 export const config = {
   matcher: [
-    '/student/:path*',
-    '/teacher/:path*'
-  ]
-};
+    // Skip Next.js internals and all static files, unless found in search params
+    '/((?!_next|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest)).*)',
+    // Always run for API routes
+    '/(api|trpc)(.*)',
+  ],
+}

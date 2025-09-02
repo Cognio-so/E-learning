@@ -22,22 +22,24 @@ const generateToken = (userId, role, email) => {
 const setCookies = (res, accessToken, refreshToken) => {
     const isProduction = process.env.NODE_ENV === 'production';
     
-    // Common cookie options
+    // For Vercel deployment, don't set domain
     const cookieOptions = {
         httpOnly: true,
         secure: isProduction,
         sameSite: isProduction ? 'none' : 'lax',
         path: '/',
+        // Remove domain setting completely for Vercel
+        // domain: isProduction ? '.vercel.app' : undefined,
     };
 
     res.cookie('accessToken', accessToken, {
         ...cookieOptions,
-        maxAge: 15 * 60 * 1000, 
+        maxAge: 15 * 60 * 1000, // 15 minutes
     });
 
     res.cookie('refreshToken', refreshToken, {
         ...cookieOptions,
-        maxAge: 7 * 24 * 60 * 60 * 1000, 
+        maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
     });
 }
 
