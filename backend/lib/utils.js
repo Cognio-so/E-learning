@@ -22,14 +22,14 @@ const generateToken = (userId, role, email) => {
 const setCookies = (res, accessToken, refreshToken) => {
     const isProduction = process.env.NODE_ENV === 'production';
     
-    // For Vercel deployment, don't set domain
+    // Cross-domain cookie options for Vercel
     const cookieOptions = {
         httpOnly: true,
-        secure: isProduction,
-        sameSite: isProduction ? 'none' : 'lax',
+        secure: true, // Must be true for HTTPS and cross-domain
+        sameSite: 'none', // Must be 'none' for cross-domain
         path: '/',
-        // Remove domain setting completely for Vercel
-        // domain: isProduction ? '.vercel.app' : undefined,
+        // Set domain to allow cross-subdomain sharing
+        domain: isProduction ? '.vercel.app' : undefined,
     };
 
     res.cookie('accessToken', accessToken, {

@@ -3,6 +3,14 @@ import { NextResponse } from 'next/server';
 export async function middleware(req) {
   const { pathname } = req.nextUrl;
   const accessToken = req.cookies.get('accessToken')?.value;
+  
+  // Debug logging
+  console.log('🔍 Middleware Debug:', {
+    pathname,
+    hasAccessToken: !!accessToken,
+    tokenLength: accessToken?.length || 0,
+    allCookies: req.cookies.getAll().map(c => c.name)
+  });
 
   // Public routes that don't need authentication
   const publicRoutes = ['/', '/auth/login', '/auth/register', '/auth/verify'];
@@ -16,10 +24,11 @@ export async function middleware(req) {
 
   // Check if user is authenticated for protected routes
   if (!accessToken) {
+    console.log('❌ No access token, redirecting to login');
     return NextResponse.redirect(new URL('/auth/login', req.url));
   }
 
-  // Allow access to protected routes
+  console.log('✅ Access token found, allowing access');
   return NextResponse.next();
 }
 

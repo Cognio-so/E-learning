@@ -22,7 +22,7 @@ app.use(cors({
         'https://e-learning-frontend-navy.vercel.app',
         'http://localhost:3000'
     ],
-    credentials: true,
+    credentials: true, // This is crucial for cookies
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin', 'Access-Control-Request-Method', 'Access-Control-Request-Headers'],
 }));
