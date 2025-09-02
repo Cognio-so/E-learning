@@ -20,25 +20,22 @@ const generateToken = (userId, role, email) => {
 }
 
 const setCookies = (res, accessToken, refreshToken) => {
-    const isProduction = process.env.NODE_ENV === 'production';
-    
-    // More permissive cookie options for debugging
     const cookieOptions = {
-        httpOnly: false, // Change to false temporarily for debugging
-        secure: isProduction,
-        sameSite: isProduction ? 'lax' : 'lax', // Change to 'lax' temporarily
+        httpOnly: true, 
+        secure: true, 
+        sameSite: 'none', // Required for cross-domain cookies
         path: '/',
-        // Remove domain restriction completely
+        domain: process.env.COOKIE_DOMAIN || undefined, // Set if you have a common domain
     };
 
     res.cookie('accessToken', accessToken, {
         ...cookieOptions,
-        maxAge: 15 * 60 * 1000, // 15 minutes
+        maxAge: 15 * 60 * 1000, 
     });
 
     res.cookie('refreshToken', refreshToken, {
         ...cookieOptions,
-        maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+        maxAge: 7 * 24 * 60 * 60 * 1000, 
     });
 }
 

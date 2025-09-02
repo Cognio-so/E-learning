@@ -5,17 +5,17 @@ import axios from "axios";
 
 const axiosInstance = axios.create({
     baseURL: process.env.NEXT_PUBLIC_API_URL,
-    withCredentials: false, // Change to false
+    withCredentials: true, // Change to true to send cookies
 });
 
-// Add request interceptor to include token in header
-axiosInstance.interceptors.request.use((config) => {
-    const token = localStorage.getItem('accessToken');
-    if (token) {
-        config.headers.Authorization = `Bearer ${token}`;
-    }
-    return config;
-});
+// Remove the request interceptor since we're using cookies now
+// axiosInstance.interceptors.request.use((config) => {
+//     const token = localStorage.getItem('accessToken');
+//     if (token) {
+//         config.headers.Authorization = `Bearer ${token}`;
+//     }
+//     return config;
+// });
 
 let refreshInterval = null;
 let isRefreshing = false;
@@ -121,7 +121,12 @@ const useAuthStore = create(
 
             clearAuth: () => {
                 clearTokenManagement();
-                localStorage.removeItem('accessToken'); // Clear token
+                // Clear cookies by calling logout endpoint
+                if (typeof window !== 'undefined') {
+                    // Clear cookies by setting expired date
+                    document.cookie = 'accessToken=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
+                    document.cookie = 'refreshToken=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
+                }
                 set({ 
                     user: null, 
                     isAuthenticated: false, 
@@ -155,8 +160,8 @@ const useAuthStore = create(
                 try {
                     const response = await axiosInstance.post("/api/auth/login", formData);
                     if (response.status === 200) {
-                        // Store token in localStorage
-                        localStorage.setItem('accessToken', response.data.accessToken);
+                        // Don't store token in localStorage - cookies are set automatically
+                        // localStorage.setItem('accessToken', response.data.accessToken);
                         
                         set({ 
                             user: response.data.user, 
@@ -241,14 +246,10 @@ const useAuthStore = create(
 
             refreshToken: async () => {
                 try {
-                    const response = await axiosInstance.post("/api/auth/refresh", {}, {
-                        headers: {
-                            Authorization: `Bearer ${localStorage.getItem('refreshToken')}`
-                        }
-                    });
+                    const response = await axiosInstance.post("/api/auth/refresh");
                     
                     if (response.status === 200) {
-                        localStorage.setItem('accessToken', response.data.accessToken);
+                        // Cookies are automatically set by the backend
                         set({ 
                             user: response.data.user, 
                             isAuthenticated: true 
