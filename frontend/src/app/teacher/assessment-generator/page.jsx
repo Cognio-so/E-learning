@@ -55,6 +55,8 @@ export default function AssessmentBuilderPage() {
   const [editingAssessment, setEditingAssessment] = useState(null);
   const [lessonDialogOpen, setLessonDialogOpen] = useState(false);
   const [selectedAssessmentForLesson, setSelectedAssessmentForLesson] = useState(null);
+  const [previewDialogOpen, setPreviewDialogOpen] = useState(false);
+  const [previewingAssessment, setPreviewingAssessment] = useState(null);
   const [lessonData, setLessonData] = useState({
     title: '',
     description: '',
@@ -274,6 +276,11 @@ export default function AssessmentBuilderPage() {
       console.error('Delete error:', error);
       toast.error('Failed to delete assessment');
     }
+  };
+
+  const handlePreviewAssessment = (assessment) => {
+    setPreviewingAssessment(assessment);
+    setPreviewDialogOpen(true);
   };
 
   // Update the handleEditAssessment function to properly populate all fields
@@ -822,14 +829,6 @@ export default function AssessmentBuilderPage() {
                 </CardContent>
               </Card>
             )}
-            {Array.isArray(generatedQuestions) && generatedQuestions.length > 0 && (
-              <div className="mt-4 p-4 bg-gray-100 dark:bg-gray-800 rounded-lg">
-                <h4 className="font-semibold text-sm mb-2">Debug: Raw Question Structure</h4>
-                <pre className="text-xs overflow-auto max-h-32">
-                  {JSON.stringify(generatedQuestions, null, 2)}
-                </pre>
-              </div>
-            )}
           </TabsContent>
 
           {/* Assessments List */}
@@ -859,6 +858,14 @@ export default function AssessmentBuilderPage() {
                           </div>
                         </div>
                         <div className="flex items-center gap-1 sm:gap-2 ml-2">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handlePreviewAssessment(assessment)}
+                            className="h-8 w-8 sm:h-9 sm:w-9 p-0"
+                          >
+                            <Eye className="h-3 w-3 sm:h-4 sm:w-4" />
+                          </Button>
                           <Button
                             variant="ghost"
                             size="sm"
@@ -1142,6 +1149,89 @@ export default function AssessmentBuilderPage() {
                   'Create Lesson'
                 )
                }
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Preview Assessment Dialog */}
+        <Dialog open={previewDialogOpen} onOpenChange={setPreviewDialogOpen}>
+          <DialogContent className="sm:max-w-[1200px] max-w-[95vw] max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="text-lg">{previewingAssessment?.title}</DialogTitle>
+              <DialogDescription>
+                {previewingAssessment?.subject} - Grade {previewingAssessment?.grade} - {previewingAssessment?.createdAt ? new Date(previewingAssessment.createdAt).toLocaleDateString() : 'N/A'}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div>
+                <p className="font-semibold">
+                  Topic: <span className="font-normal">{previewingAssessment?.topic || 'None provided'}</span>
+                </p>
+                <p className="font-semibold mt-2">
+                  Learning Objectives: <span className="font-normal">{previewingAssessment?.learningObjectives || 'None provided'}</span>
+                </p>
+                <p className="font-semibold mt-2">
+                  Difficulty: <span className="font-normal">{previewingAssessment?.difficulty || 'Medium'}</span>
+                </p>
+                <p className="font-semibold mt-2">
+                  Duration: <span className="font-normal">{previewingAssessment?.duration || '30'} minutes</span>
+                </p>
+                <p className="font-semibold mt-2">
+                  Status: <span className="font-normal">{previewingAssessment?.status || 'Draft'}</span>
+                </p>
+                <p className="font-semibold mt-2">
+                  Created At: <span className="font-normal">{previewingAssessment?.createdAt ? new Date(previewingAssessment.createdAt).toLocaleDateString() : 'N/A'}</span>
+                </p>
+              </div>
+              <div>
+                <h4 className="font-semibold text-base sm:text-lg mb-3">Description</h4>
+                <p className="text-sm text-muted-foreground">{previewingAssessment?.description || 'No description provided.'}</p>
+              </div>
+              <div>
+                <h4 className="font-semibold text-base sm:text-lg mb-3">Questions</h4>
+                <div className="space-y-4 max-h-96 overflow-y-auto">
+                  {previewingAssessment?.questions && previewingAssessment.questions.length > 0 ? (
+                    previewingAssessment.questions.map((q, index) => (
+                      <div key={index} className="p-3 sm:p-4 border rounded-lg bg-muted/30">
+                        <p className="font-semibold text-sm sm:text-base">
+                          {index + 1}. ({getQuestionTypeDisplay(q.type || q.questionType || 'mixed')}) {q.question || q.text || q.content || 'No question text provided.'}
+                        </p>
+                        {q.options && q.options.length > 0 && (
+                          <ul className="list-disc pl-4 sm:pl-5 mt-2 space-y-1 text-sm">
+                            {q.options.map((opt, i) => (
+                              <li key={i} className="text-muted-foreground">{typeof opt === 'string' ? opt : opt.text || opt.option || opt}</li>
+                            ))}
+                          </ul>
+                        )}
+                        <p className="text-xs text-muted-foreground mt-1">Points: {q.points || q.score || 1}</p>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-sm text-muted-foreground">No questions generated for this assessment.</p>
+                  )}
+                </div>
+              </div>
+              {previewingAssessment?.solutions && previewingAssessment.solutions.length > 0 && (
+                <>
+                  <Separator className="my-4" />
+                  <div>
+                    <h4 className="font-semibold text-base sm:text-lg mb-3">Answer Key ({previewingAssessment.solutions.length} Solutions)</h4>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-32 overflow-y-auto">
+                      {previewingAssessment.solutions.map((solution, index) => (
+                        <div key={index} className="p-2 text-xs sm:text-sm bg-green-50 dark:bg-green-950/30 rounded border">
+                          <span className="font-semibold">{solution.questionNumber}.</span>{" "}
+                          <span className="text-green-700 dark:text-green-300">{solution.answer}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+            <DialogFooter>
+              <Button variant="ghost" onClick={() => setPreviewDialogOpen(false)}>
+                Close
               </Button>
             </DialogFooter>
           </DialogContent>

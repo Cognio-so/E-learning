@@ -48,6 +48,10 @@ const progressSchema = new mongoose.Schema({
     answer: String,
     isCorrect: Boolean
   }],
+  feedback: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Feedback'
+  },
   createdAt: {
     type: Date,
     default: Date.now

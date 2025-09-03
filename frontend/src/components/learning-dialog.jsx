@@ -127,13 +127,25 @@ const LearningDialog = ({
     
     switch (resource.resourceType) {
       case 'slides': 
-        return resource.slides?.length || resource.slideUrls?.length || 1
+      case 'slide': // Add this case
+        // Check multiple possible slide data structures
+        const slides = resource.slides || resource.slideUrls || resource.slidesUrls || []
+        if (slides.length > 0) {
+          return slides.length
+        }
+        
+        // If no slides array, check for single content
+        if (resource.content || resource.generatedContent || resource.rawContent || 
+            resource.fileUrl || resource.url || resource.imageUrl || resource.imageUrls) {
+          return 1
+        }
+        
+        return 1
       case 'video': 
         return 1
       case 'comic': 
         // Comics use imageUrls array - check if it exists and has content
         const comicImages = resource.imageUrls || resource.pages || resource.images || []
-        console.log('Comic images found:', comicImages.length, comicImages) // Debug log
         return comicImages.length > 0 ? comicImages.length : 1
       case 'image': 
         return 1
@@ -161,9 +173,20 @@ const LearningDialog = ({
     setIsPlaying(true)
     setStartTime(Date.now())
     
-    // Calculate initial progress based on current step
+    // For single-step resources (image, video, content), set progress to 100% immediately
     const totalSteps = getTotalSteps()
-    const initialProgress = totalSteps > 1 ? Math.round((1 / totalSteps) * 100) : 10
+    let initialProgress = 10
+    
+    if (totalSteps === 1) {
+      // Single step resources can be completed immediately
+      if (resource.resourceType === 'image' || resource.resourceType === 'video' || resource.resourceType === 'content') {
+        initialProgress = 100
+      } else {
+        initialProgress = 100
+      }
+    } else {
+      initialProgress = Math.round((1 / totalSteps) * 100)
+    }
     
     // Update progress to indicate learning has started
     if (user?._id && resource) {
@@ -178,10 +201,15 @@ const LearningDialog = ({
       setProgress(initialProgress)
     }
     
+    // Debug: Log the entire resource object
+    console.log('Full resource object in handleStartLearning:', resource);
+    console.log('Resource type:', resource?.resourceType);
+    console.log('Resource keys:', resource ? Object.keys(resource) : 'No resource');
+    
     // Enhanced title detection with comprehensive fallback logic
     let resourceTitle = 'Learning Resource'; // Default fallback
     
-    if (resource) {
+    if (resource && typeof resource === 'object') {
       // Debug logging to see what's available
       console.log('Resource object for title detection:', {
         title: resource.title,
@@ -190,18 +218,34 @@ const LearningDialog = ({
         topic: resource.topic,
         subject: resource.subject,
         description: resource.description,
-        content: resource.content
+        content: resource.content,
+        // Add more possible fields
+        resourceName: resource.resourceName,
+        displayName: resource.displayName,
+        heading: resource.heading,
+        label: resource.label
       });
       
-      // Try multiple title fields in order of preference
-      resourceTitle = resource.title || 
-                     resource.name || 
-                     resource.instruction || 
-                     resource.topic || 
-                     resource.subject || 
-                     resource.description || 
-                     resource.content || 
-                     'Learning Resource';
+      // Try multiple title fields in order of preference with null checks
+      const possibleTitles = [
+        resource.title,
+        resource.name,
+        resource.instruction,
+        resource.topic,
+        resource.subject,
+        resource.description,
+        resource.content,
+        resource.resourceName,
+        resource.displayName,
+        resource.heading,
+        resource.label
+      ].filter(title => title && typeof title === 'string' && title.trim() !== '');
+      
+      console.log('Possible titles found:', possibleTitles);
+      
+      if (possibleTitles.length > 0) {
+        resourceTitle = possibleTitles[0];
+      }
       
       // Clean up the title - remove any HTML tags and truncate if too long
       if (typeof resourceTitle === 'string') {
@@ -221,12 +265,21 @@ const LearningDialog = ({
     }
     
     // Final validation - ensure we have a valid title
-    if (!resourceTitle || resourceTitle === 'undefined' || resourceTitle === 'null') {
+    if (!resourceTitle || resourceTitle === 'undefined' || resourceTitle === 'null' || resourceTitle.trim() === '') {
       resourceTitle = 'Learning Resource';
     }
     
     console.log('Final resource title:', resourceTitle);
-    toast.success(`Started learning ${resourceTitle}! 🚀`)
+    console.log('Title type:', typeof resourceTitle);
+    console.log('Title length:', resourceTitle.length);
+    
+    // Ensure we have a valid title before showing toast
+    const finalTitle = resourceTitle && resourceTitle.trim() !== '' ? resourceTitle : 'Learning Resource';
+    
+    console.log('Toast final title:', finalTitle);
+    
+    // Show toast with guaranteed valid title
+    toast.success(`Started learning ${finalTitle}! 🚀`)
   }
 
   const handlePause = () => {
@@ -276,28 +329,64 @@ const LearningDialog = ({
     
     try {
       if (resource.resourceType === 'assessment') {
-        // Prepare answers for submission
-        const answers = Object.keys(assessmentAnswers).map(questionIndex => ({
+        // Validate that all questions have answers before submitting
+        const totalQuestions = getTotalSteps()
+        const answeredQuestions = Object.keys(assessmentAnswers).length
+        const shortAnswerCount = Object.keys(shortAnswerInputs).filter(key => 
+          shortAnswerInputs[key] && shortAnswerInputs[key].trim().length > 0
+        ).length
+        
+        const totalAnswered = answeredQuestions + shortAnswerCount
+        
+        if (totalAnswered < totalQuestions) {
+          toast.error(`Please answer all ${totalQuestions} questions before submitting. You've answered ${totalAnswered}.`)
+          setIsLoading(false)
+          return
+        }
+        
+        // Prepare answers for submission with proper structure
+        const answers = []
+        
+        // Add MCQ and True/False answers
+        Object.keys(assessmentAnswers).forEach(questionIndex => {
+          if (assessmentAnswers[questionIndex]) {
+            answers.push({
           questionId: questionIndex,
           answer: assessmentAnswers[questionIndex]
-        }))
-        
-        // Add short answer responses
-        Object.keys(shortAnswerInputs).forEach(questionIndex => {
-          const existingAnswer = answers.find(a => a.questionId === questionIndex)
-          if (!existingAnswer && shortAnswerInputs[questionIndex]) {
-            answers.push({
-              questionId: questionIndex,
-              answer: shortAnswerInputs[questionIndex]
             })
           }
         })
         
-        console.log('Submitting assessment answers:', answers)
+        // Add short answer responses
+        Object.keys(shortAnswerInputs).forEach(questionIndex => {
+          if (shortAnswerInputs[questionIndex] && shortAnswerInputs[questionIndex].trim()) {
+            // Check if this question already has an answer
+          const existingAnswer = answers.find(a => a.questionId === questionIndex)
+            if (!existingAnswer) {
+            answers.push({
+              questionId: questionIndex,
+                answer: shortAnswerInputs[questionIndex].trim()
+              })
+            }
+          }
+        })
+        
+        console.log('Submitting assessment answers:', {
+          totalQuestions,
+          answersSubmitted: answers.length,
+          answers: answers,
+          resourceQuestions: resource.questions,
+          resourceSolutions: resource.solutions
+        })
         
         // Use the progress store to submit assessment
         const result = await submitAssessment(user._id, resource._id, answers)
         console.log('Assessment result:', result)
+        
+        // Validate the result structure
+        if (!result || !result.progress) {
+          throw new Error('Invalid assessment result structure')
+        }
         
         // Store results and show feedback
         setAssessmentResults(result)
@@ -370,38 +459,326 @@ const LearningDialog = ({
   }
 
   const renderSlidesContent = () => {
-    if (!resource.slides || resource.slides.length === 0) {
+    // Check for different possible slide data structures
+    const slides = resource.slides || resource.slideUrls || resource.slidesUrls || []
+    const totalSlides = slides.length
+    
+    console.log('Slide data debug:', {
+      resourceType: resource.resourceType,
+      slides: resource.slides,
+      slideUrls: resource.slideUrls,
+      slidesUrls: resource.slidesUrls,
+      totalSlides,
+      currentStep,
+      resource: resource
+    })
+    
+    // If no slides array, try to render as a single slide resource
+    if (totalSlides === 0) {
+      // Check if this is a single slide resource with direct content
+      if (resource.content || resource.generatedContent || resource.rawContent) {
+        return (
+          <div className="aspect-video bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden">
+            <div className="h-full flex items-center justify-center p-6">
+              <div className="text-center max-w-4xl">
+                <h3 className="text-xl font-semibold text-gray-800 dark:text-white mb-4">
+                  {resource.title || resource.name || 'Slide Content'}
+                </h3>
+                <div className="prose prose-lg max-w-none text-gray-700 dark:text-gray-300">
+                  <ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownStyles}>
+                    {resource.content || resource.generatedContent || resource.rawContent || ''}
+                  </ReactMarkdown>
+                </div>
+              </div>
+            </div>
+          </div>
+        )
+      }
+      
+      // Check if it has a direct file URL
+      if (resource.fileUrl || resource.url) {
+        const fileUrl = resource.fileUrl || resource.url
+        
+        // If it's a PPTX file
+        if (fileUrl.includes('.pptx') || fileUrl.includes('.ppt')) {
+          return (
+            <div className="aspect-video bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden">
+              <PPTXViewer fileUrl={fileUrl} />
+            </div>
+          )
+        }
+        // If it's an image
+        else if (fileUrl.includes('.jpg') || fileUrl.includes('.jpeg') || 
+                 fileUrl.includes('.png') || fileUrl.includes('.gif') ||
+                 fileUrl.includes('.webp')) {
+          return (
+            <div className="aspect-video bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden">
+              <img 
+                src={fileUrl} 
+                alt={resource.title || 'Slide Image'}
+                className="w-full h-full object-contain"
+                onError={(e) => {
+                  console.error('Failed to load slide image:', fileUrl)
+                  e.target.style.display = 'none'
+                }}
+              />
+            </div>
+          )
+        }
+        // If it's a video
+        else if (fileUrl.includes('.mp4') || fileUrl.includes('.webm') ||
+                 fileUrl.includes('.ogg')) {
+          return (
+            <div className="aspect-video bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden">
+              <video 
+                src={fileUrl}
+                className="w-full h-full object-contain"
+                controls
+                autoPlay={false}
+                muted
+              >
+                Your browser does not support the video tag.
+              </video>
+            </div>
+          )
+        }
+        // If it's a PDF
+        else if (fileUrl.includes('.pdf')) {
+          return (
+            <div className="aspect-video bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden">
+              <iframe
+                src={fileUrl}
+                className="w-full h-full"
+                title={resource.title || 'Slide PDF'}
+              >
+                <p>Your browser does not support PDFs. <a href={fileUrl} target="_blank" rel="noopener noreferrer">Download PDF</a></p>
+              </iframe>
+            </div>
+          )
+        }
+        // Default to iframe for other content types
+        else {
+          return (
+            <div className="aspect-video bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden">
+              <iframe
+                src={fileUrl}
+                className="w-full h-full"
+                title={resource.title || 'Slide Content'}
+              >
+                <p>Content not supported. <a href={fileUrl} target="_blank" rel="noopener noreferrer">Open in new tab</a></p>
+              </iframe>
+            </div>
+          )
+        }
+      }
+      
+      // If it has imageUrls (like comics)
+      if (resource.imageUrls && resource.imageUrls.length > 0) {
+        return (
+          <div className="aspect-video bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden">
+            <img 
+              src={resource.imageUrls[0]} 
+              alt={resource.title || 'Slide Image'}
+              className="w-full h-full object-contain"
+              onError={(e) => {
+                console.error('Failed to load slide image:', resource.imageUrls[0])
+                e.target.style.display = 'none'
+              }}
+            />
+          </div>
+        )
+      }
+      
+      // If it has a single image
+      if (resource.imageUrl) {
+        return (
+          <div className="aspect-video bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden">
+            <img 
+              src={resource.imageUrl} 
+              alt={resource.title || 'Slide Image'}
+              className="w-full h-full object-contain"
+              onError={(e) => {
+                console.error('Failed to load slide image:', resource.imageUrl)
+                e.target.style.display = 'none'
+              }}
+            />
+          </div>
+        )
+      }
+      
+      // Fallback: show placeholder with resource info
         return (
               <div className="aspect-video bg-white dark:bg-gray-800 rounded-xl shadow-lg flex items-center justify-center">
                 <div className="text-center">
                   <FileText className="h-16 w-16 text-blue-500 mx-auto mb-4" />
-                  <p className="text-gray-600 dark:text-gray-300">
-              {resource.title || resource.name} - Slide {currentStep + 1}
-                  </p>
-                  <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
-              {resource.description || resource.content || 'Interactive content and learning materials'}
-                  </p>
+            <h3 className="text-lg font-semibold text-gray-800 dark:text-white mb-2">
+              {resource.title || resource.name || 'Slide Content'}
+            </h3>
+            <p className="text-gray-600 dark:text-gray-300 mb-4">
+              {resource.description || resource.content || 'This slide resource is available but content needs to be loaded'}
+            </p>
+            
+            {/* Debug info in development */}
+            {process.env.NODE_ENV === 'development' && (
+              <div className="mt-4 p-3 bg-gray-100 dark:bg-gray-700 rounded-lg text-left text-xs">
+                <p className="font-semibold mb-2">Debug Info:</p>
+                <p>Resource Type: {resource.resourceType}</p>
+                <p>Has slides: {!!resource.slides}</p>
+                <p>Has slideUrls: {!!resource.slideUrls}</p>
+                <p>Has fileUrl: {!!resource.fileUrl}</p>
+                <p>Has imageUrl: {!!resource.imageUrl}</p>
+                <p>Has content: {!!resource.content}</p>
+                <p>Resource keys: {Object.keys(resource).join(', ')}</p>
+              </div>
+            )}
                 </div>
               </div>
       )
     }
 
-    const currentSlide = resource.slides[currentStep]
-    return (
-      <div className="aspect-video bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden">
-        {currentSlide?.fileUrl ? (
+    const currentSlide = slides[currentStep]
+    
+    // Handle different slide data structures
+    let slideContent = null
+    let slideTitle = `Slide ${currentStep + 1} of ${totalSlides}`
+    
+    if (currentSlide) {
+      // Check if it's a file URL (PPTX)
+      if (currentSlide.fileUrl) {
+        slideContent = (
           <PPTXViewer fileUrl={currentSlide.fileUrl} />
-        ) : (
+        )
+        slideTitle = currentSlide.title || slideTitle
+      }
+      // Check if it's a direct URL string
+      else if (typeof currentSlide === 'string') {
+        // If it's a PPTX file
+        if (currentSlide.includes('.pptx') || currentSlide.includes('.ppt')) {
+          slideContent = (
+            <PPTXViewer fileUrl={currentSlide} />
+          )
+        }
+        // If it's an image
+        else if (currentSlide.includes('.jpg') || currentSlide.includes('.jpeg') || 
+                 currentSlide.includes('.png') || currentSlide.includes('.gif') ||
+                 currentSlide.includes('.webp')) {
+          slideContent = (
+            <img 
+              src={currentSlide} 
+              alt={slideTitle}
+              className="w-full h-full object-contain"
+              onError={(e) => {
+                console.error('Failed to load slide image:', currentSlide)
+                e.target.style.display = 'none'
+              }}
+            />
+          )
+        }
+        // If it's a video
+        else if (currentSlide.includes('.mp4') || currentSlide.includes('.webm') ||
+                 currentSlide.includes('.ogg')) {
+          slideContent = (
+            <video 
+              src={currentSlide}
+              className="w-full h-full object-contain"
+              controls
+              autoPlay={false}
+              muted
+            >
+              Your browser does not support the video tag.
+            </video>
+          )
+        }
+        // If it's a PDF
+        else if (currentSlide.includes('.pdf')) {
+          slideContent = (
+            <iframe
+              src={currentSlide}
+              className="w-full h-full"
+              title={slideTitle}
+            >
+              <p>Your browser does not support PDFs. <a href={currentSlide} target="_blank" rel="noopener noreferrer">Download PDF</a></p>
+            </iframe>
+          )
+        }
+        // Default to iframe for other content types
+        else {
+          slideContent = (
+            <iframe
+              src={currentSlide}
+              className="w-full h-full"
+              title={slideTitle}
+            >
+              <p>Content not supported. <a href={currentSlide} target="_blank" rel="noopener noreferrer">Open in new tab</a></p>
+            </iframe>
+          )
+        }
+      }
+      // Check if it's an object with content
+      else if (currentSlide.content || currentSlide.text || currentSlide.description) {
+        slideContent = (
+          <div className="h-full flex items-center justify-center p-6">
+            <div className="text-center max-w-4xl">
+              <h3 className="text-xl font-semibold text-gray-800 dark:text-white mb-4">
+                {currentSlide.title || slideTitle}
+              </h3>
+              <div className="prose prose-lg max-w-none text-gray-700 dark:text-gray-300">
+                <ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownStyles}>
+                  {currentSlide.content || currentSlide.text || currentSlide.description || ''}
+                </ReactMarkdown>
+              </div>
+            </div>
+          </div>
+        )
+        slideTitle = currentSlide.title || slideTitle
+      }
+      // Check if it's an object with imageUrl
+      else if (currentSlide.imageUrl) {
+        slideContent = (
+          <img 
+            src={currentSlide.imageUrl} 
+            alt={currentSlide.title || slideTitle}
+            className="w-full h-full object-contain"
+            onError={(e) => {
+              console.error('Failed to load slide image:', currentSlide.imageUrl)
+              e.target.style.display = 'none'
+            }}
+          />
+        )
+        slideTitle = currentSlide.title || slideTitle
+      }
+    }
+
+    // If no content was determined, show fallback
+    if (!slideContent) {
+      slideContent = (
           <div className="h-full flex items-center justify-center">
             <div className="text-center p-6">
               <FileText className="h-16 w-16 text-blue-500 mx-auto mb-4" />
               <h3 className="text-lg font-semibold text-gray-800 dark:text-white mb-2">
-                {currentSlide?.title || `Slide ${currentStep + 1}`}
+              {slideTitle}
               </h3>
               <p className="text-gray-600 dark:text-gray-300">
                 {currentSlide?.content || resource.description || 'Slide content will appear here'}
               </p>
             </div>
+        </div>
+      )
+    }
+
+    return (
+      <div className="aspect-video bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden">
+        {slideContent}
+        
+        {/* Slide counter overlay */}
+        <div className="absolute bottom-4 right-4 bg-black bg-opacity-50 text-white px-3 py-1 rounded-full text-sm font-medium">
+          {currentStep + 1} / {totalSlides}
+        </div>
+        
+        {/* Slide title overlay */}
+        {slideTitle && (
+          <div className="absolute top-4 left-4 bg-black bg-opacity-50 text-white px-3 py-2 rounded-lg text-sm font-medium max-w-xs truncate">
+            {slideTitle}
           </div>
         )}
           </div>
@@ -466,18 +843,20 @@ const LearningDialog = ({
 
     const currentImage = comicImages[currentStep]
     return (
-      <div className="aspect-[4/3] bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden">
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden">
         {currentImage ? (
+          <div className="flex items-center justify-center p-4">
           <img 
             src={currentImage} 
             alt={`Comic page ${currentStep + 1} of ${totalSteps}`}
-            className="w-full h-full object-contain"
+              className="max-w-full max-h-[500px] object-contain rounded-lg shadow-md"
             onError={(e) => {
               console.error('Failed to load comic image:', currentImage)
               e.target.style.display = 'none'
               e.target.nextSibling.style.display = 'flex'
             }}
           />
+          </div>
         ) : null}
         <div className="h-full flex items-center justify-center" style={{ display: currentImage ? 'none' : 'flex' }}>
           <div className="text-center p-6">
@@ -496,13 +875,15 @@ const LearningDialog = ({
 
   const renderImageContent = () => {
         return (
-      <div className="aspect-square bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden">
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden">
         {resource.imageUrl ? (
+          <div className="flex items-center justify-center p-4">
           <img 
             src={resource.imageUrl} 
             alt={resource.title || resource.name}
-            className="w-full h-full object-contain"
+              className="max-w-full max-h-[500px] object-contain rounded-lg shadow-md"
           />
+          </div>
         ) : (
           <div className="h-full flex items-center justify-center">
                 <div className="text-center">
@@ -534,14 +915,22 @@ const LearningDialog = ({
       description: resource.description,
       generatedContent: resource.generatedContent,
       rawContent: resource.rawContent,
-      doc: resource.doc
+      doc: resource.doc,
+      slides: resource.slides,
+      slideUrls: resource.slideUrls,
+      slidesUrls: resource.slidesUrls,
+      fileUrl: resource.fileUrl,
+      url: resource.url,
+      imageUrl: resource.imageUrl,
+      imageUrls: resource.imageUrls
     })
 
     // Determine the actual resource type
     const actualResourceType = resource.resourceType || resource.type || resource.source || 'content'
 
     switch (actualResourceType) {
-      case 'slide':
+      case 'slides':
+      case 'slide': // Add this case
         return renderSlidesContent()
       case 'video':
         return renderVideoContent()
@@ -692,6 +1081,18 @@ const LearningDialog = ({
 
   const renderAssessmentContent = () => {
     if (showResults && assessmentResults) {
+      // Enhanced results display with better error handling
+      const score = assessmentResults.score || 0
+      const correctAnswers = assessmentResults.correctAnswers || 0
+      const totalQuestions = assessmentResults.totalQuestions || getTotalSteps()
+      
+      console.log('Rendering assessment results:', {
+        score,
+        correctAnswers,
+        totalQuestions,
+        assessmentResults
+      })
+      
       return (
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6">
           <div className="text-center">
@@ -700,17 +1101,23 @@ const LearningDialog = ({
               Assessment Complete! 🎉
             </h4>
             <div className="text-4xl font-bold text-green-600 mb-4">
-              {assessmentResults.score}%
+              {score}%
             </div>
             <p className="text-gray-600 dark:text-gray-300 mb-6">
-              You got {assessmentResults.correctAnswers} out of {assessmentResults.totalQuestions} questions correct!
+              You got {correctAnswers} out of {totalQuestions} questions correct!
             </p>
             
             {/* Question-by-question feedback */}
+            {assessmentResults.progress?.answers && Array.isArray(assessmentResults.progress.answers) && (
             <div className="space-y-4 max-h-96 overflow-y-auto">
               {assessmentResults.progress.answers.map((answer, index) => {
                 const question = resource.questions[parseInt(answer.questionId)]
                 const isCorrect = answer.isCorrect
+                  
+                  if (!question) {
+                    console.warn('Question not found for answer:', answer)
+                    return null
+                  }
                 
                 return (
                   <div key={index} className={`p-4 rounded-lg border-2 ${
@@ -739,11 +1146,11 @@ const LearningDialog = ({
                         </span>
                       </div>
                       
-                      {!isCorrect && (
+                        {!isCorrect && answer.correctAnswer && (
                         <div className="flex items-center">
                           <span className="font-medium text-gray-600 mr-2">Correct answer:</span>
                           <span className="font-semibold text-green-700">
-                            {getCorrectAnswer(question, answer.questionId)}
+                              {answer.correctAnswer}
                           </span>
                         </div>
                       )}
@@ -752,6 +1159,8 @@ const LearningDialog = ({
                 )
               })}
             </div>
+            )}
+            
             
             <Button 
               className="mt-6 rounded-xl bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white font-semibold shadow-lg"
@@ -965,6 +1374,34 @@ const LearningDialog = ({
     return shortAnswerText && shortAnswerText.trim().length > 0
   }
 
+  // Check if current step is the last step
+  const isLastStep = () => {
+    return currentStep >= getTotalSteps() - 1
+  }
+
+  // Check if resource can be completed immediately
+  const canCompleteImmediately = () => {
+    const totalSteps = getTotalSteps()
+    return totalSteps === 1 || 
+           (resource.resourceType === 'image' && totalSteps === 1) ||
+           (resource.resourceType === 'video' && totalSteps === 1) ||
+           (resource.resourceType === 'content' && totalSteps === 1)
+  }
+
+  // Check if should show complete button
+  const shouldShowCompleteButton = () => {
+    if (resource.resourceType === 'assessment') {
+      return isLastStep()
+    }
+    
+    if (canCompleteImmediately()) {
+      return true
+    }
+    
+    // For multi-step resources, show complete button on last step
+    return isLastStep() || progress >= 100
+  }
+
   if (!resource) return null
 
   return (
@@ -1014,8 +1451,8 @@ const LearningDialog = ({
             {renderContent()}
           </div>
 
-          {/* Navigation Controls */}
-          {resource.resourceType !== 'assessment' && getTotalSteps() > 1 && (
+          {/* Navigation Controls - Only show for multi-step resources */}
+          {getTotalSteps() > 1 && resource.resourceType !== 'assessment' && (
           <div className="flex items-center justify-between pt-4 border-t border-gray-200 dark:border-gray-700">
             <div className="flex items-center gap-3">
               <Button
@@ -1075,10 +1512,10 @@ const LearningDialog = ({
 
           {/* Action Buttons */}
           <div className="flex gap-3 pt-4">
-            {/* For assessments - simple next/complete logic */}
+            {/* For assessments */}
             {resource.resourceType === 'assessment' && (
               <>
-                {currentStep < getTotalSteps() - 1 && (
+                {!isLastStep() && (
                   <Button 
                     className="flex-1 rounded-xl bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 text-white font-semibold shadow-lg"
                     onClick={handleNextStep}
@@ -1089,7 +1526,7 @@ const LearningDialog = ({
                   </Button>
                 )}
                 
-                {currentStep >= getTotalSteps() - 1 && (
+                {isLastStep() && (
                   <Button 
                     className="flex-1 rounded-xl bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 text-white font-semibold shadow-lg"
                     onClick={handleComplete}
@@ -1106,10 +1543,11 @@ const LearningDialog = ({
               </>
             )}
             
-            {/* For other resources - show complete button when content is viewed */}
+            {/* For other resources */}
             {resource.resourceType !== 'assessment' && (
               <>
-                {!isPlaying && !isCompleted && (
+                {/* Show start button only if not started and not immediately completable */}
+                {!isPlaying && !canCompleteImmediately() && (
               <Button 
                 className="flex-1 rounded-xl bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white font-semibold shadow-lg"
                 onClick={handleStartLearning}
@@ -1119,8 +1557,8 @@ const LearningDialog = ({
               </Button>
             )}
             
-                {/* Show complete button when learning has started or content has been viewed */}
-                {(isPlaying || progress > 0 || isCompleted) && (
+                {/* Show complete button when appropriate */}
+                {shouldShowCompleteButton() && (
               <Button 
                 className="flex-1 rounded-xl bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 text-white font-semibold shadow-lg"
                 onClick={handleComplete}
@@ -1131,7 +1569,7 @@ const LearningDialog = ({
                 ) : (
                   <CheckCircle className="mr-2 h-4 w-4" />
                 )}
-                Complete Learning
+                    {resource.resourceType === 'assessment' ? 'Submit Assessment' : 'Complete Learning'}
               </Button>
             )}
               </>

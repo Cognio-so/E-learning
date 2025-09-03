@@ -760,6 +760,7 @@ class PresentationSchema(BaseModel):
     language: str = Field("ENGLISH", description="The language of the presentation.", example="ENGLISH", pattern="^(ENGLISH|ARABIC)$")
     fetch_images: bool = Field(True, description="Whether to include stock images in the presentation.")
     verbosity: str = Field("standard", description="The desired text verbosity.", example="standard", pattern="^(concise|standard|text-heavy)$")
+    template: str = Field("default", description="The template style for the presentation.", example="default", pattern="^(default|aurora|lavender|monarch|serene|iris|clyde|adam|nebula|bruno)$")
 
 @app.post("/presentation_endpoint", response_model=Dict[str, Any])
 async def presentation_endpoint(schema: PresentationSchema):
@@ -775,7 +776,7 @@ async def presentation_endpoint(schema: PresentationSchema):
             logger.error(f"Failed to initialize SlideSpeakGenerator: {e}")
             raise HTTPException(status_code=500, detail=str(e))
 
-        logger.info(f"Generating presentation for topic: {schema.plain_text}")
+        logger.info(f"Generating presentation for topic: {schema.plain_text} with template: {schema.template}")
         
         # The generate_presentation method in SlideSpeakGenerator is synchronous (uses requests and time.sleep).
         # To avoid blocking the server's event loop, we run it in a separate thread pool.
@@ -786,7 +787,8 @@ async def presentation_endpoint(schema: PresentationSchema):
             length=schema.length,
             language=schema.language,
             fetch_images=schema.fetch_images,
-            verbosity=schema.verbosity
+            verbosity=schema.verbosity,
+            template=schema.template  # Add template parameter
         )
         
         # Check if the result contains an error key from the generator class

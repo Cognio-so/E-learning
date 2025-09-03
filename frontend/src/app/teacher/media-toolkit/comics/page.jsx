@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { CarouselWithControls } from "@/components/ui/carousel"
-import { Eye, Download, Trash2, Save, Maximize2, BookOpen, Sparkles, Play, Pause, Grid, X } from "lucide-react"
+import { Eye, Download, Trash2, Save, Maximize2, BookOpen, Sparkles, Play, Pause, Grid, X, Loader2 } from "lucide-react"
 import useMediaStore from "@/store/useMediaStore"
 import useAuthStore from "@/store/useAuthStore" // Add this import
 import { toast } from "sonner"
@@ -446,14 +446,27 @@ const ComicsCreator = () => {
                   size="sm" 
                   variant="outline" 
                   onClick={() => comics?.images?.[0]?.url && handleDownload(comics.images[0].url, 'comic.png')} 
-                  disabled={!comics?.images?.length}
+                  disabled={!comics?.images?.length || comics.isSaving}
                 >
                   <Download className="h-4 w-4 mr-2" />
                   Download First
                 </Button>
-                <Button size="sm" onClick={handleSaveComic} disabled={!comics?.images?.length}>
-                  <Save className="h-4 w-4 mr-2" />
-                  Save Comic
+                <Button 
+                  size="sm" 
+                  onClick={handleSaveComic} 
+                  disabled={!comics?.images?.length || comics.isSaving}
+                >
+                  {comics.isSaving ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2" />
+                      Saving...
+                    </>
+                  ) : (
+                    <>
+                      <Save className="h-4 w-4 mr-2" />
+                      Save Comic
+                    </>
+                  )}
                 </Button>
               </div>
             </div>

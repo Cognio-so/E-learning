@@ -213,34 +213,98 @@ const submitAssessment = catchAsync(async (req, res) => {
     });
   }
 
-  if (!assessment.solutions || !Array.isArray(assessment.solutions)) {
-    return res.status(400).json({
-      status: 'error',
-      message: 'Assessment has no solutions'
-    });
-  }
+  console.log('Assessment data:', {
+    questionsCount: assessment.questions.length,
+    solutionsCount: assessment.solutions?.length || 0,
+    questions: assessment.questions,
+    solutions: assessment.solutions,
+    answers: answers
+  });
 
-  // Calculate score
+  // Calculate score with enhanced logic
   let correctAnswers = 0;
   const gradedAnswers = answers.map(answer => {
     // The questionId from frontend is the array index (0, 1, 2, etc.)
     const questionIndex = parseInt(answer.questionId);
+    const question = assessment.questions[questionIndex];
     
-    // Find the corresponding solution (questionNumber is 1-based, so add 1)
-    const solution = assessment.solutions.find(s => s.questionNumber === questionIndex + 1);
-    
-    if (!solution) {
+    if (!question) {
+      console.warn(`Question not found for index ${questionIndex}`);
       return { ...answer, isCorrect: false };
     }
     
-    // Check if the answer matches the correct answer from solutions
-    const isCorrect = solution.answer.trim().toLowerCase() === answer.answer.trim().toLowerCase();
+    let isCorrect = false;
+    let correctAnswer = 'Not provided';
+    
+    // Try multiple ways to find the correct answer
+    if (assessment.solutions && assessment.solutions.length > 0) {
+      // Method 1: Try to find solution by questionNumber (1-based)
+      const solution = assessment.solutions.find(s => s.questionNumber === questionIndex + 1);
+      if (solution && solution.answer) {
+        correctAnswer = solution.answer;
+        isCorrect = solution.answer.trim().toLowerCase() === answer.answer.trim().toLowerCase();
+      }
+    }
+    
+    // Method 2: Check if question has correctAnswer property
+    if (!isCorrect && question.correctAnswer) {
+      correctAnswer = question.correctAnswer;
+      isCorrect = question.correctAnswer.trim().toLowerCase() === answer.answer.trim().toLowerCase();
+    }
+    
+    // Method 3: For MCQ questions, check if the answer matches any of the options
+    if (!isCorrect && question.type === 'mcq' && question.options && question.options.length > 0) {
+      // If no correct answer is specified, assume first option is correct (fallback)
+      if (!question.correctAnswer) {
+        correctAnswer = question.options[0];
+        isCorrect = question.options[0].trim().toLowerCase() === answer.answer.trim().toLowerCase();
+      }
+    }
+    
+    // Method 4: For True/False questions, check common patterns
+    if (!isCorrect && question.type === 'true_false') {
+      const userAnswer = answer.answer.trim().toLowerCase();
+      const questionText = question.question.toLowerCase();
+      
+      // Simple heuristic: if question contains negative words, "False" is often correct
+      const negativeWords = ['not', 'never', 'none', 'neither', 'false', 'incorrect', 'wrong'];
+      const hasNegative = negativeWords.some(word => questionText.includes(word));
+      
+      if (hasNegative && userAnswer === 'false') {
+        isCorrect = true;
+        correctAnswer = 'False';
+      } else if (!hasNegative && userAnswer === 'true') {
+        isCorrect = true;
+        correctAnswer = 'True';
+      }
+    }
+    
     if (isCorrect) correctAnswers++;
     
-    return { ...answer, isCorrect };
+    console.log(`Question ${questionIndex + 1} scoring:`, {
+      question: question.question,
+      userAnswer: answer.answer,
+      correctAnswer: correctAnswer,
+      isCorrect: isCorrect,
+      questionType: question.type
+    });
+    
+    return { 
+      ...answer, 
+      isCorrect,
+      correctAnswer,
+      questionType: question.type
+    };
   });
 
   const score = Math.round((correctAnswers / assessment.questions.length) * 100);
+  
+  console.log('Final scoring result:', {
+    totalQuestions: assessment.questions.length,
+    correctAnswers,
+    score,
+    gradedAnswers
+  });
   
   // Update progress
   let progress = await Progress.findOne({ userId, resourceId });

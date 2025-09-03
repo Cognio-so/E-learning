@@ -90,6 +90,7 @@ const LearningLibrary = () => {
   
   const { 
     userProgress, 
+    progress, // Add this to get the progress map
     isLoading: progressLoading, 
     error: progressError,
     fetchUserProgress,
@@ -320,7 +321,159 @@ const LearningLibrary = () => {
     }
   }
 
+  // Enhanced resource handling based on type
+  const handleResourceClick = (resource) => {
+    // For images, videos, and single content - allow immediate completion
+    if (resource.resourceType === 'image' || 
+        resource.resourceType === 'video' || 
+        resource.resourceType === 'content') {
+      // Check if it's already completed
+      const isCompleted = userProgress.some(p => 
+        p.resourceId === resource._id && p.progress >= 100
+      )
+      
+      if (isCompleted) {
+        toast.info('This resource is already completed! 🎉')
+        return
+      }
+    }
+    
+    setSelectedResource(resource)
+  }
 
+  // Enhanced progress calculation using both sources
+  const getResourceProgress = (resourceId) => {
+    // First check the progress map (most up-to-date)
+    if (progress[resourceId]) {
+      return progress[resourceId].progress || 0
+    }
+    
+    // Fallback to userProgress array
+    const progressEntry = userProgress.find(p => p.resourceId === resourceId)
+    return progressEntry ? progressEntry.progress || 0 : 0
+  }
+
+  // Enhanced completion status
+  const isResourceCompleted = (resourceId) => {
+    // First check the progress map (most up-to-date)
+    if (progress[resourceId]) {
+      return progress[resourceId].progress >= 100
+    }
+    
+    // Fallback to userProgress array
+    const progressEntry = userProgress.find(p => p.resourceId === resourceId)
+    return progressEntry ? progressEntry.progress >= 100 : false
+  }
+
+  // Enhanced resource card rendering with real-time updates
+  const renderResourceCard = (resource) => {
+    const progressValue = getResourceProgress(resource._id)
+    const isCompleted = isResourceCompleted(resource._id)
+    
+    return (
+      <motion.div
+        key={`${resource._id}-${progressValue}-${isCompleted}`} // Force re-render when progress changes
+        whileHover={{ scale: 1.02 }}
+        whileTap={{ scale: 0.98 }}
+        className="relative group cursor-pointer"
+      >
+        <Card 
+          className={`h-full transition-all duration-300 ${
+            isCompleted 
+              ? 'ring-2 ring-green-500 bg-green-50 dark:bg-green-900/20' 
+              : 'hover:shadow-lg hover:border-blue-300'
+          }`}
+          onClick={() => handleResourceClick(resource)}
+        >
+          <CardHeader className="pb-3">
+            <div className="flex items-start justify-between">
+              <div className="flex items-center gap-3">
+                <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${getItemColor(resource.subject)} flex items-center justify-center text-white text-2xl`}>
+                  {typeCharacters[resource.resourceType] || '📚'}
+                </div>
+                <div className="flex-1">
+                  <CardTitle className="text-lg font-bold text-gray-800 dark:text-white line-clamp-2">
+                    {resource.title || resource.name || resource.instruction}
+                  </CardTitle>
+                  <CardDescription className="text-sm text-gray-600 dark:text-gray-300">
+                    {resource.subject || 'General'} • {resource.resourceType || 'content'}
+                  </CardDescription>
+                </div>
+              </div>
+              
+              {/* Completion badge */}
+              {isCompleted && (
+                <Badge className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
+                  <CheckCircle className="w-3 h-3 mr-1" />
+                  Completed
+                </Badge>
+              )}
+            </div>
+          </CardHeader>
+          
+          <CardContent className="pt-0">
+            {/* Progress indicator */}
+            {!isCompleted && progressValue > 0 && (
+              <div className="mb-4">
+                <div className="flex items-center justify-between text-sm text-gray-600 dark:text-gray-300 mb-1">
+                  <span>Progress</span>
+                  <span>{Math.floor(progressValue)}%</span>
+                </div>
+                <Progress value={progressValue} className="h-2" />
+              </div>
+            )}
+            
+            {/* Resource description */}
+            <p className="text-gray-600 dark:text-gray-300 text-sm line-clamp-3">
+              {resource.description || resource.content || 'Interactive learning content'}
+            </p>
+            
+            {/* Action buttons */}
+            <div className="flex gap-2 mt-4">
+              {isCompleted ? (
+                <Button 
+                  variant="outline" 
+                  className="flex-1 bg-green-50 text-green-700 border-green-200 hover:bg-green-100"
+                  disabled
+                >
+                  <CheckCircle className="w-4 h-4 mr-2" />
+                  Completed
+                </Button>
+              ) : (
+                <Button 
+                  className="flex-1 bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 text-white"
+                >
+                  {progressValue > 0 ? 'Continue Learning' : 'Start Learning'}
+                </Button>
+              )}
+              
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  // Preview functionality
+                }}
+              >
+                <Eye className="w-4 h-4" />
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </motion.div>
+    )
+  }
+
+  // Handle resource completion
+  const handleResourceComplete = (result) => {
+    // Force a refresh of the progress data
+    if (user?._id) {
+      fetchUserProgress(user._id)
+    }
+    
+    // Show success message
+    toast.success('Resource completed successfully! 🎉')
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-indigo-50 dark:from-gray-900 dark:via-purple-900 dark:to-indigo-900">

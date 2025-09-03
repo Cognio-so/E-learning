@@ -128,7 +128,8 @@ class PythonApiClient {
         language: presentationData.language || 'ENGLISH',
         fetch_images: presentationData.includeImages !== false,
         verbosity: presentationData.verbosity || 'standard',
-        grade_level: presentationData.gradeLevel || '8' // Add grade level
+        grade_level: presentationData.gradeLevel || '8', // Add grade level
+        template: presentationData.template || 'default' // Add template parameter
       };
   
       console.log('Sending presentation request:', pythonSchema);

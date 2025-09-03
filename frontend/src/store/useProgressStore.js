@@ -147,14 +147,19 @@ const useProgressStore = create(
                     });
                     
                     if (response.status === 200) {
+                        const updatedProgress = response.data.data;
+                        
                         set(state => ({
                             progress: {
                                 ...(state.progress || {}),
-                                [resourceId]: response.data.data
-                            }
+                                [resourceId]: updatedProgress
+                            },
+                            userProgress: state.userProgress.map(p => 
+                                p.resourceId === resourceId ? updatedProgress : p
+                            ).filter(Boolean) // Remove any undefined entries
                         }));
                         
-                        return response.data.data;
+                        return updatedProgress;
                     }
                 } catch (error) {
                     console.error('Failed to update progress:', error);
@@ -168,14 +173,20 @@ const useProgressStore = create(
                     const response = await axiosInstance.post(`/api/progress/${userId}/${resourceId}/complete`);
                     
                     if (response.status === 200) {
+                        const updatedProgress = response.data.data;
+                        
+                        // Update both progress map and userProgress array
                         set(state => ({
                             progress: {
                                 ...(state.progress || {}),
-                                [resourceId]: response.data.data
-                            }
+                                [resourceId]: updatedProgress
+                            },
+                            userProgress: state.userProgress.map(p => 
+                                p.resourceId === resourceId ? updatedProgress : p
+                            ).filter(Boolean) // Remove any undefined entries
                         }));
                         
-                        return response.data.data;
+                        return updatedProgress;
                     }
                 } catch (error) {
                     console.error('Failed to complete resource:', error);
@@ -193,12 +204,15 @@ const useProgressStore = create(
                     if (response.status === 200) {
                         const responseData = response.data.data;
                         
-                        // Update progress in store
+                        // Update both progress map and userProgress array
                         set(state => ({
                             progress: {
                                 ...(state.progress || {}),
                                 [resourceId]: responseData.progress
-                            }
+                            },
+                            userProgress: state.userProgress.map(p => 
+                                p.resourceId === resourceId ? responseData.progress : p
+                            ).filter(Boolean) // Remove any undefined entries
                         }));
                         
                         return responseData;

@@ -194,8 +194,8 @@ const useMediaStore = create(
             } catch (e) {
                 console.error('Stream error:', e)
                 if (e.name !== 'AbortError') {
-                    setError(e.message || 'Stream error')
-                    toast.error(e.message || 'Failed to generate comic')
+                    setError(e.message)
+                    // Removed toast - let UI handle user feedback
                 }
             } finally {
                 setComicsState({ isGenerating: false })
@@ -234,6 +234,9 @@ const useMediaStore = create(
 
         saveComic: async (comicData) => {
             const { setComicsState, setError } = get()
+            
+            // Set saving state to true
+            setComicsState({ isSaving: true })
             
             try {
                 console.log('Saving comic with data:', comicData);
@@ -285,13 +288,17 @@ const useMediaStore = create(
 
                     if (response.status === 201) {
                         const savedComic = response.data;
+                        // Clear ALL live preview state after successful save
                         setComicsState(prev => ({ 
                             saved: [savedComic, ...prev.saved],
                             images: [], // Clear current images
                             liveViewerOpen: false, // Close the modal
-                            currentComic: null
+                            previewOpen: false, // Close preview modal if open
+                            previewComic: null, // Clear preview comic
+                            currentComic: null, // Clear current comic
+                            isSaving: false // Reset saving state
                         }))
-                        toast.success('Comic saved successfully')
+                        // Removed toast - let UI handle user feedback
                         return savedComic;
                     }
                 } else {
@@ -306,13 +313,17 @@ const useMediaStore = create(
 
                     if (response.status === 201) {
                         const savedComic = response.data;
+                        // Clear ALL live preview state after successful save
                         setComicsState(prev => ({ 
                             saved: [savedComic, ...prev.saved],
                             images: [], // Clear current images
                             liveViewerOpen: false, // Close the modal
-                            currentComic: null
+                            previewOpen: false, // Close preview modal if open
+                            previewComic: null, // Clear preview comic
+                            currentComic: null, // Clear current comic
+                            isSaving: false // Reset saving state
                         }))
-                        toast.success('Comic saved successfully')
+                        // Removed toast - let UI handle user feedback
                         return savedComic;
                     }
                 }
@@ -320,7 +331,9 @@ const useMediaStore = create(
                 console.error('Save comic error:', error);
                 const errorMessage = error.response?.data?.message || 'Failed to save comic';
                 setError(errorMessage)
-                toast.error(errorMessage)
+                // Removed toast - let UI handle user feedback
+                // Reset saving state on error
+                setComicsState({ isSaving: false })
                 throw error;
             }
         },
@@ -333,14 +346,14 @@ const useMediaStore = create(
 
                 if (response.status === 200) {
                     setComicsState(prev => ({ saved: prev.saved.filter(x => x._id !== id) }))
-                    toast.success('Comic deleted successfully')
+                    // Removed toast - let UI handle user feedback
                     return true;
                 }
             } catch (error) {
                 console.error('Delete comic error:', error);
                 const errorMessage = error.response?.data?.message || 'Failed to delete comic';
                 setError(errorMessage)
-                toast.error(errorMessage)
+                // Removed toast - let UI handle user feedback
                 throw error;
             }
         },
@@ -397,13 +410,13 @@ const useMediaStore = create(
                 
                 if (response.image_url) {
                     setImagesState({ currentImage: response.image_url })
-                    toast.success('Image generated successfully')
+                    // Removed toast - let UI handle user feedback
                     
                     // Removed auto-save - user will manually save if needed
                 }
             } catch (e) {
                 setError(e.message)
-                toast.error(e.message || 'Failed to generate image')
+                // Removed toast - let UI handle user feedback
             } finally {
                 setImagesState({ isGenerating: false })
             }
@@ -443,7 +456,7 @@ const useMediaStore = create(
                     if (uploadResponse.status === 201) {
                         const savedImage = uploadResponse.data;
                         setImagesState(prev => ({ saved: [savedImage, ...prev.saved] }))
-                        toast.success('Image saved successfully')
+                        // Removed toast - let UI handle user feedback
                         return savedImage;
                     }
                 } else {
@@ -462,7 +475,7 @@ const useMediaStore = create(
                     if (response.status === 201) {
                         const savedImage = response.data;
                         setImagesState(prev => ({ saved: [savedImage, ...prev.saved] }))
-                        toast.success('Image saved successfully')
+                        // Removed toast - let UI handle user feedback
                         return savedImage;
                     }
                 }
@@ -470,7 +483,7 @@ const useMediaStore = create(
                 console.error('Save image error:', error);
                 const errorMessage = error.response?.data?.message || 'Failed to save image';
                 setError(errorMessage)
-                toast.error(errorMessage)
+                // Removed toast - let UI handle user feedback
                 throw error;
             }
         },
@@ -483,14 +496,14 @@ const useMediaStore = create(
 
                 if (response.status === 200) {
                     setImagesState(prev => ({ saved: prev.saved.filter(x => x._id !== id) }))
-                    toast.success('Image deleted successfully')
+                    // Removed toast - let UI handle user feedback
                     return true;
                 }
             } catch (error) {
                 console.error('Delete image error:', error);
                 const errorMessage = error.response?.data?.message || 'Failed to delete image';
                 setError(errorMessage)
-                toast.error(errorMessage)
+                // Removed toast - let UI handle user feedback
                 throw error;
             }
         },
@@ -545,10 +558,11 @@ const useMediaStore = create(
             try {
                 console.log('Generating presentation with data:', presentationData);
                 
-                // Add gradeLevel to the Python API call
+                // Add gradeLevel and template to the Python API call
                 const response = await PythonApi.generatePresentation({
                     ...presentationData,
-                    gradeLevel: presentationData.gradeLevel || '8' // Default to grade 8 if not provided
+                    gradeLevel: presentationData.gradeLevel || '8', // Default to grade 8 if not provided
+                    template: presentationData.template || 'default' // Default to default template if not provided
                 })
                 
                 console.log('Python API presentation response:', response);
@@ -568,7 +582,8 @@ const useMediaStore = create(
                         downloadUrl: presentationUrl, // Use same URL for download
                         slideCount: presentationData.slideCount || 10,
                         status: status,
-                        taskId: presData.task_id
+                        taskId: presData.task_id,
+                        template: presentationData.template || 'default' // Include template in presentation data
                     };
                     
                     console.log('Extracted presentation data:', presentation);
@@ -581,13 +596,14 @@ const useMediaStore = create(
                         presentationUrl: response,
                         downloadUrl: response,
                         slideCount: presentationData.slideCount || 10,
-                        status: 'completed'
+                        status: 'completed',
+                        template: presentationData.template || 'default' // Include template in presentation data
                     };
                 }
                 
                 if (presentation) {
                     setSlidesState({ currentPresentation: presentation })
-                    toast.success('Presentation generated successfully')
+                    // Removed toast - let UI handle user feedback
                     
                     // Removed auto-save - user will manually save if needed
                 } else {
@@ -599,7 +615,8 @@ const useMediaStore = create(
                         presentationUrl: null,
                         downloadUrl: null,
                         slideCount: presentationData.slideCount || 10,
-                        status: 'pending'
+                        status: 'pending',
+                        template: presentationData.template || 'default' // Include template in placeholder
                     };
                     
                     setSlidesState({ currentPresentation: placeholderPresentation })
@@ -609,7 +626,7 @@ const useMediaStore = create(
             } catch (e) {
                 console.error('Presentation generation error:', e);
                 setError(e.message)
-                toast.error(e.message || 'Failed to generate presentation')
+                // Removed toast - let UI handle user feedback
                 
                 // Removed auto-save on error
             } finally {
@@ -645,7 +662,7 @@ const useMediaStore = create(
                 if (response.status === 201) {
                     const savedPresentation = response.data;
                     setSlidesState(prev => ({ saved: [savedPresentation, ...prev.saved] }))
-                    toast.success('Presentation saved successfully')
+                    // Removed toast - let UI handle user feedback
                     return savedPresentation;
                 }
             } catch (error) {
@@ -653,7 +670,7 @@ const useMediaStore = create(
                 console.error('Error response:', error.response?.data);
                 const errorMessage = error.response?.data?.message || 'Failed to save presentation';
                 setError(errorMessage)
-                toast.error(errorMessage)
+                // Removed toast - let UI handle user feedback
                 throw error;
             } finally {
                 setSlidesState({ isSaving: false })
@@ -668,14 +685,14 @@ const useMediaStore = create(
 
                 if (response.status === 200) {
                     setSlidesState(prev => ({ saved: prev.saved.filter(p => p._id !== presentationId) }))
-                    toast.success('Presentation deleted successfully')
+                    // Removed toast - let UI handle user feedback
                     return true;
                 }
             } catch (error) {
                 console.error('Delete presentation error:', error);
                 const errorMessage = error.response?.data?.message || 'Failed to delete presentation';
                 setError(errorMessage)
-                toast.error(errorMessage)
+                // Removed toast - let UI handle user feedback
                 throw error;
             }
         },
@@ -707,10 +724,10 @@ const useMediaStore = create(
                 }
                 
                 setVideoState({ currentVideo: generatedVideo })
-                toast.success('Video generated successfully')
+                // Removed toast - let UI handle user feedback
             } catch (e) {
                 setError(e.message)
-                toast.error(e.message || 'Failed to generate video')
+                // Removed toast - let UI handle user feedback
             } finally {
                 setVideoState({ isGenerating: false })
             }
@@ -768,13 +785,13 @@ const useMediaStore = create(
                 
                 if (response.content) {
                     setWebSearchState({ currentResults: response.content })
-                    toast.success('Web search completed successfully')
+                    // Removed toast - let UI handle user feedback
                     
                     // Removed auto-save - user will manually save if needed
                 }
             } catch (e) {
                 setError(e.message)
-                toast.error(e.message || 'Failed to perform web search')
+                // Removed toast - let UI handle user feedback
             } finally {
                 setWebSearchState({ isGenerating: false })
             }
@@ -798,14 +815,14 @@ const useMediaStore = create(
                 if (response.status === 201) {
                     const savedSearch = response.data;
                     setWebSearchState(prev => ({ saved: [savedSearch, ...prev.saved] }))
-                    toast.success('Web search saved successfully')
+                    // Removed toast - let UI handle user feedback
                     return savedSearch;
                 }
             } catch (error) {
                 console.error('Save web search error:', error);
                 const errorMessage = error.response?.data?.message || 'Failed to save web search';
                 setError(errorMessage)
-                toast.error(errorMessage)
+                // Removed toast - let UI handle user feedback
                 throw error;
             }
         },
@@ -818,14 +835,14 @@ const useMediaStore = create(
 
                 if (response.status === 200) {
                     setWebSearchState(prev => ({ saved: prev.saved.filter(x => x._id !== id) }))
-                    toast.success('Web search deleted successfully')
+                    // Removed toast - let UI handle user feedback
                     return true;
                 }
             } catch (error) {
                 console.error('Delete web search error:', error);
                 const errorMessage = error.response?.data?.message || 'Failed to delete web search';
                 setError(errorMessage)
-                toast.error(errorMessage)
+                // Removed toast - let UI handle user feedback
                 throw error;
             }
         },

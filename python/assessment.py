@@ -30,34 +30,52 @@ Please adhere to the following specifications:
 - **Difficulty Level:** {difficulty_level}
 - **User-Specific Instructions:** {user_prompt}
 
-**Crucial Instructions:**
-- **Priority of Instructions:** In the event of a conflict between the `User-Specific Instructions` and the rules below, you **must** prioritize these Crucial Instructions to ensure the output format and integrity are maintained.
-- **Language of Generation:** All questions and answers must be generated *only* in the specified `{language}`.
-- **Strictly Adhere to Assessment Type:** You must generate questions that match the specified `{assessment_type}`. If the assessment type is "Mixed", you MUST follow the exact question distribution provided in `{question_distribution}`. For example, if the distribution is {{"mcq": 2, "true_false": 2, "short_answer": 2}}, you must generate exactly 2 MCQ questions, 2 True/False questions, and 2 Short Answer questions. Do not mix formats within a single question.
-- **Separate Questions and Answers:** The entire output must be structured into two distinct parts: the questions first, followed by a clearly marked answer key.
+**CRITICAL OUTPUT FORMAT REQUIREMENTS:**
 
-**Output Formatting Rules:**
-1.  **Generate Questions:**
-    - First, generate the exact number of questions requested following the distribution if it's a mixed assessment.
-    - For 'MCQ' type, provide four options labeled A, B, C, and D.
-    - For 'True or False' type, provide a clear statement.
-    - For 'Short Answer' type, ask a clear question.
-    - **Do not** provide the answer immediately after a question.
+1. **Question Generation Rules:**
+   - Generate questions numbered as: 1., 2., 3., etc.
+   - For MCQ questions: Provide exactly 4 options labeled A), B), C), D)
+   - For True/False questions: Provide clear statements without options (options will be auto-generated)
+   - For Short Answer questions: Provide clear, direct questions
+   - Each question must be on its own line
+   - Options must be on separate lines immediately after each question
 
-2.  **Generate the Answer Key:**
-    - After listing all the questions, add a separator and a heading for the answers.
-    - If the language is English, format it exactly as:
+2. **Answer Section Format:**
+   - After all questions, add exactly this separator line: ---
+   - Then add the heading based on language:
+     * If English: **Solutions**
+     * If Arabic: **الحلول**
+   - List each answer as: 1. [Answer], 2. [Answer], etc.
+   - For MCQ: Use letter only (e.g., "1. C")
+   - For True/False: Use "True" or "False" (e.g., "1. True")
+   - For Short Answer: Provide complete answer (e.g., "1. The Treaty of Paris")
+
+3. **Quality Requirements:**
+   - Each question must be clear and unambiguous
+   - All questions must be relevant to the specified topic and grade level
+   - Answers must be factually correct
+   - Language must be appropriate for the target grade level
+   - Follow the exact question distribution if specified
+
+**EXAMPLE OUTPUT FORMAT:**
+
+1. What was the primary cause of the American Revolution?
+A) High taxes without representation
+B) Religious persecution
+C) Territorial disputes
+D) Trade restrictions
+
+2. The Boston Tea Party occurred in 1773. True or False?
+
+3. Explain the significance of the Declaration of Independence.
+
 ---
 **Solutions**
-    - If the language is Arabic, format it exactly as:
----
-**الحلول**
-    - Below this heading, list each question number and its corresponding correct answer.
-    - Example for 'MCQ': `1. C`
-    - Example for 'True or False': `1. True`
-    - Example for 'Short Answer': `1. The Treaty of Paris.`
+1. A
+2. True  
+3. The Declaration of Independence established the thirteen American colonies as independent states and outlined the philosophical foundation for democratic government, including the principles of individual rights and government by consent of the governed.
 
-- **Final Output:** The final output should contain *only* the generated questions and the separate answer key section. Do not include any other text, introductory phrases, or explanations.
+**STRICT COMPLIANCE REQUIRED:** You must follow this exact format. Any deviation will cause parsing errors in the frontend system.
 """
 
 def create_question_generation_chain(google_api_key: str, model_name: str = "gemini-1.5-pro-latest"):
@@ -82,9 +100,42 @@ async def generate_test_questions_async(chain, schema: dict):
         schema (dict): A dictionary containing the test specifications.
 
     Returns:
-        The generated text content.
+        The generated text content with properly formatted questions and solutions.
     """
-    return await chain.ainvoke(schema)
+    try:
+        # Generate the content
+        raw_content = await chain.ainvoke(schema)
+        
+        # Validate the output format
+        if not validate_output_format(raw_content):
+            print("Warning: Generated content may not be in the expected format")
+        
+        return raw_content
+    except Exception as e:
+        print(f"Error generating test questions: {e}")
+        raise
+
+def validate_output_format(content: str) -> bool:
+    """
+    Validates that the generated content follows the expected format.
+    
+    Args:
+        content (str): The generated content to validate
+        
+    Returns:
+        bool: True if format is valid, False otherwise
+    """
+    if not content:
+        return False
+    
+    # Check for numbered questions
+    has_questions = any(line.strip().startswith(f"{i}.") for i in range(1, 21) for line in content.split('\n'))
+    
+    # Check for solutions section
+    has_separator = "---" in content
+    has_solutions = "**Solutions**" in content or "**الحلول**" in content
+    
+    return has_questions and has_separator and has_solutions
 
 def get_user_input_from_terminal():
     """
@@ -102,15 +153,29 @@ def get_user_input_from_terminal():
         "grade_level": input("Enter the grade or class (e.g., '10th Grade'): "),
         "subject": input("Enter the subject (e.g., 'History'): "),
         "topic": input("Enter the specific topic (e.g., 'The American Revolution'): "),
+        "assessment_type": assessment_types[0] if len(assessment_types) == 1 else "Mixed",
         "assessment_types": assessment_types,
+        "question_types": [t.lower().replace(" ", "_") for t in assessment_types],
+        "question_distribution": {},  # Will be calculated if needed
         "language": input("Enter the language for the test (English or Arabic): "),
         "test_duration": input("Enter the test duration (e.g., '45 minutes'): "),
         "number_of_questions": int(input("Enter the number of questions: ")),
         "difficulty_level": input("Enter the difficulty level (Easy, Medium, Hard): "),
         "user_prompt": input("Enter optional instructions (or press Enter to skip): ")
     }
+    
     if not schema["user_prompt"]:
         schema["user_prompt"] = "None."
+        
+    # Calculate question distribution for mixed assessments
+    if schema["assessment_type"] == "Mixed" and len(assessment_types) > 1:
+        total_questions = schema["number_of_questions"]
+        questions_per_type = total_questions // len(assessment_types)
+        remainder = total_questions % len(assessment_types)
+        
+        for i, q_type in enumerate(schema["question_types"]):
+            schema["question_distribution"][q_type] = questions_per_type + (1 if i < remainder else 0)
+    
     return schema
 
 async def main_cli_async():
@@ -135,6 +200,14 @@ async def main_cli_async():
         print("--- Generated Test Questions ---")
         print(generated_content)
         print("--- End of Test ---")
+        
+        # Optionally save to file
+        save_option = input("\nWould you like to save this test to a file? (y/n): ")
+        if save_option.lower() == 'y':
+            filename = f"test_{user_schema['topic'].replace(' ', '_').lower()}.txt"
+            with open(filename, 'w', encoding='utf-8') as f:
+                f.write(generated_content)
+            print(f"Test saved to {filename}")
         
     except ValueError as ve:
         print(f"Error: {ve}")

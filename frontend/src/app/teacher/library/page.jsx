@@ -958,11 +958,6 @@ function ResourceCard({ r, onPreview, onAddToLesson }) {
           </div>
           
           <div className="flex items-center justify-between pt-2">
-            <div className="flex items-center space-x-2 text-xs text-gray-500 dark:text-gray-400">
-              <BarChart3 className="h-3 w-3" />
-              <span>Used {r.usage || 0} times</span>
-            </div>
-            
             <div className="flex space-x-2">
               <Button
                 size="sm"

@@ -66,7 +66,7 @@ const LoadingFallback = () => (
 );
 
 // Memoized content preview component
-const ContentPreview = ({ content, contentType, onCopy, onExport, onSave, isCopied, isExported, isSaved, isSaving }) => {
+const ContentPreview = ({ content, contentType, onCopy, onExport, onSave, isCopied, isExported, isSaved, isSaving, onGenerateSlides }) => {
   const handleCopy = useCallback(() => {
     navigator.clipboard.writeText(content);
     onCopy();
@@ -118,6 +118,17 @@ const ContentPreview = ({ content, contentType, onCopy, onExport, onSave, isCopi
                 )}
                 {isSaving ? 'Saving...' : 'Save'}
               </Button>
+              {onGenerateSlides && (
+                <Button
+                  size="sm"
+                  onClick={onGenerateSlides}
+                  disabled={isSaving}
+                  className="h-9 bg-blue-600 hover:bg-blue-700 text-xs"
+                >
+                  <PresentationIcon className="h-4 w-4 mr-1" />
+                  Create Slides
+                </Button>
+              )}
             </div>
           )}
         </CardTitle>
@@ -131,7 +142,7 @@ const ContentPreview = ({ content, contentType, onCopy, onExport, onSave, isCopi
       </CardHeader>
       <CardContent>
         {content ? (
-          <div className="bg-slate-50 dark:bg-slate-900 rounded-lg p-4 max-h-[50vh] sm:max-h-[600px] overflow-y-auto border">
+          <div className="bg-slate-50 dark:bg-slate-900 rounded-lg p-4 max-h-[90vh] sm:max-h-[1000px] lg:max-h-[1200px] xl:max-h-[1400px] 2xl:max-h-[1600px] overflow-y-auto border min-h-[600px] w-full">
             <Suspense fallback={<LoadingFallback />}>
               <div className="prose prose-sm max-w-none text-foreground">
                 <ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownStyles}>
@@ -198,7 +209,7 @@ const SavedContentItem = ({ item, onView, onDelete, onEdit, onAddToLesson }) => 
                   <Eye className="h-4 w-4" />
                 </Button>
               </DialogTrigger>
-              <DialogContent className="sm:max-w-[800px] max-w-[95vw] max-h-[80vh] overflow-y-auto">
+              <DialogContent className="sm:max-w-[1200px] max-w-[95vw] max-h-[90vh] lg:max-h-[95vh] xl:max-h-[98vh] overflow-y-auto">
                 <DialogHeader>
                   <DialogTitle className="text-lg">{item.topic}</DialogTitle>
                   <DialogDescription>
@@ -675,229 +686,242 @@ const ContentGeneratorPage = () => {
               </p>
             </div>
 
-            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 sm:gap-6">
-              {/* Form Section */}
-              <Card className="shadow-sm border-0 bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm">
-                <CardHeader className="p-4 sm:p-6">
-                  <CardTitle className="text-lg sm:text-xl">Content Configuration</CardTitle>
-                  <CardDescription className="text-sm">
-                    Configure your lesson details to generate personalized content
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4 sm:space-y-6 p-4 sm:p-6">
-                  {/* Content Type Selection */}
-                  <div>
-                    <Label className="text-sm font-medium">Content Type *</Label>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 mt-2">
-                      {contentTypeOptions.map((type) => (
-                        <div
-                          key={type.id}
-                          className={`p-3 sm:p-4 rounded-xl border-2 cursor-pointer transition-all duration-300 hover:shadow-md ${
-                            contentType === type.id 
-                              ? "border-violet-500 bg-violet-50 dark:bg-violet-950/30" 
-                              : "border-border hover:border-violet-300 dark:hover:border-violet-700"
-                          }`}
-                          onClick={() => setContentType(type.id)}
-                        >
-                          <div className="flex items-center space-x-2 sm:space-x-3">
-                            <div className={`w-8 h-8 sm:w-10 sm:h-10 rounded-lg ${type.color} flex items-center justify-center flex-shrink-0`}>
-                              <type.icon className="h-4 w-4 sm:h-5 sm:w-5 text-white" />
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <h4 className="font-semibold text-sm sm:text-base truncate">{type.title}</h4>
-                              <p className="text-xs text-muted-foreground line-clamp-2">
-                                {type.description}
-                              </p>
-                            </div>
-                            {contentType === type.id && (
-                              <CheckCircle className="h-4 w-4 text-violet-600 flex-shrink-0" />
-                            )}
+            {/* Form Section - Full Width */}
+            <Card className="shadow-sm border-0 bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm mb-6">
+              <CardHeader className="p-4 sm:p-6">
+                <CardTitle className="text-lg sm:text-xl">Content Configuration</CardTitle>
+                <CardDescription className="text-sm">
+                  Configure your lesson details to generate personalized content
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4 sm:space-y-6 p-4 sm:p-6">
+                {/* Content Type Selection */}
+                <div>
+                  <Label className="text-sm font-medium">Content Type *</Label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 mt-2">
+                    {contentTypeOptions.map((type) => (
+                      <div
+                        key={type.id}
+                        className={`p-3 sm:p-4 rounded-xl border-2 cursor-pointer transition-all duration-300 hover:shadow-md ${
+                          contentType === type.id 
+                            ? "border-violet-500 bg-violet-50 dark:bg-violet-950/30" 
+                            : "border-border hover:border-violet-300 dark:hover:border-violet-700"
+                        }`}
+                        onClick={() => setContentType(type.id)}
+                      >
+                        <div className="flex items-center space-x-2 sm:space-x-3">
+                          <div className={`w-8 h-8 sm:w-10 sm:h-10 rounded-lg ${type.color} flex items-center justify-center flex-shrink-0`}>
+                            <type.icon className="h-4 w-4 sm:h-5 sm:w-5 text-white" />
                           </div>
+                          <div className="flex-1 min-w-0">
+                            <h4 className="font-semibold text-sm sm:text-base truncate">{type.title}</h4>
+                            <p className="text-xs text-muted-foreground line-clamp-2">
+                              {type.description}
+                            </p>
+                          </div>
+                          {contentType === type.id && (
+                            <CheckCircle className="h-4 w-4 text-violet-600 flex-shrink-0" />
+                          )}
                         </div>
-                      ))}
-                    </div>
+                      </div>
+                    ))}
                   </div>
+                </div>
 
-                  {/* Form Inputs */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+                {/* Form Inputs */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="subject" className="text-sm font-medium">Subject *</Label>
+                    <Select value={selectedSubject} onValueChange={setSelectedSubject}>
+                      <SelectTrigger className="h-10">
+                        <SelectValue placeholder="Select subject..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {subjects.map((subject) => (
+                          <SelectItem key={subject.id} value={subject.id}>
+                            {subject.title}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <Label htmlFor="grade" className="text-sm font-medium">Grade</Label>
+                    <div className="h-10 px-3 py-2 border border-gray-300 rounded-md bg-gray-50 dark:bg-gray-700 dark:border-gray-600 flex items-center">
+                      <span className="text-sm text-gray-600 dark:text-gray-300 truncate">
+                        {user?.grade === 'K' ? 'Kindergarten' : `Grade ${user?.grade}`}
+                      </span>
+                    </div>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                      Automatically set to your teaching grade
+                    </p>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="topic" className="text-sm font-medium">Lesson Topic *</Label>
+                  <Input
+                    id="topic"
+                    placeholder="e.g., Introduction to Fractions, Photosynthesis..."
+                    value={topic}
+                    onChange={(e) => setTopic(e.target.value)}
+                    className="h-10"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="objectives" className="text-sm font-medium">
+                    Learning Objectives (Optional)
+                  </Label>
+                  <Textarea
+                    id="objectives"
+                    placeholder="Describe what students should learn..."
+                    value={objectives}
+                    onChange={(e) => setObjectives(e.target.value)}
+                    rows={3}
+                    className="resize-none"
+                  />
+                </div>
+
+                <Separator />
+
+                <Button
+                  variant="outline"
+                  onClick={() => setShowAdvanced(!showAdvanced)}
+                  className="flex items-center h-10 w-full sm:w-auto"
+                >
+                  <Settings className="h-4 w-4 mr-2" />
+                  {showAdvanced ? "Hide Advanced Settings" : "Show Advanced Settings"}
+                </Button>
+                
+                {showAdvanced && (
+                  <div className="space-y-4 p-3 sm:p-4 border rounded-lg bg-muted/20">
                     <div className="space-y-2">
-                      <Label htmlFor="subject" className="text-sm font-medium">Subject *</Label>
-                      <Select value={selectedSubject} onValueChange={setSelectedSubject}>
+                      <Label htmlFor="emotionalFlags" className="text-sm font-medium">
+                        Emotional Considerations (Optional)
+                      </Label>
+                      <Input
+                        id="emotionalFlags"
+                        placeholder="e.g., anxiety, low confidence"
+                        value={emotionalFlags}
+                        onChange={(e) => setEmotionalFlags(e.target.value)}
+                        className="h-10"
+                      />
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <Label htmlFor="language" className="text-sm font-medium">Language</Label>
+                      <Select value={language} onValueChange={setLanguage}>
                         <SelectTrigger className="h-10">
-                          <SelectValue placeholder="Select subject..." />
+                          <SelectValue placeholder="Select language..." />
                         </SelectTrigger>
                         <SelectContent>
-                          {subjects.map((subject) => (
-                            <SelectItem key={subject.id} value={subject.id}>
-                              {subject.title}
-                            </SelectItem>
-                          ))}
+                          <SelectItem value="English">English</SelectItem>
+                          <SelectItem value="Arabic">Arabic</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
                     
                     <div className="space-y-2">
-                      <Label htmlFor="grade" className="text-sm font-medium">Grade</Label>
-                      <div className="h-10 px-3 py-2 border border-gray-300 rounded-md bg-gray-50 dark:bg-gray-700 dark:border-gray-600 flex items-center">
-                        <span className="text-sm text-gray-600 dark:text-gray-300 truncate">
-                          {user?.grade === 'K' ? 'Kindergarten' : `Grade ${user?.grade}`}
-                        </span>
+                      <Label className="text-sm font-medium">Additional Options</Label>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div className="flex items-center space-x-2 p-2 rounded-lg border">
+                          <Checkbox
+                            id="adaptiveLevel"
+                            checked={adaptiveLevel}
+                            onCheckedChange={setAdaptiveLevel}
+                          />
+                          <Label htmlFor="adaptiveLevel" className="text-sm">Adaptive Difficulty</Label>
+                        </div>
+                        <div className="flex items-center space-x-2 p-2 rounded-lg border">
+                          <Checkbox
+                            id="includeAssessment"
+                            checked={includeAssessment}
+                            onCheckedChange={setIncludeAssessment}
+                          />
+                          <Label htmlFor="includeAssessment" className="text-sm">Include Assessment</Label>
+                        </div>
+                        <div className="flex items-center space-x-2 p-2 rounded-lg border">
+                          <Checkbox
+                            id="multimediaSuggestions"
+                            checked={multimediaSuggestions}
+                            onCheckedChange={setMultimediaSuggestions}
+                          />
+                          <Label htmlFor="multimediaSuggestions" className="text-sm">Multimedia Suggestions</Label>
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="language" className="text-sm font-medium">Language</Label>
+                          <Select value={language} onValueChange={setLanguage}>
+                            <SelectTrigger className="h-10">
+                              <SelectValue placeholder="Select language..." />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="English">English</SelectItem>
+                              <SelectItem value="Arabic">Arabic</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
                       </div>
-                      <p className="text-xs text-gray-500 dark:text-gray-400">
-                        Automatically set to your teaching grade
-                      </p>
+                    </div>
+                    
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="instructionalDepth" className="text-sm font-medium">Instructional Depth</Label>
+                        <Select value={instructionalDepth} onValueChange={setInstructionalDepth}>
+                          <SelectTrigger className="h-10">
+                            <SelectValue placeholder="Select depth..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="low">Basic</SelectItem>
+                            <SelectItem value="standard">Standard</SelectItem>
+                            <SelectItem value="high">Advanced</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="contentVersion" className="text-sm font-medium">Content Version</Label>
+                        <Select value={contentVersion} onValueChange={setContentVersion}>
+                          <SelectTrigger className="h-10">
+                            <SelectValue placeholder="Select version..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="low">Simplified</SelectItem>
+                            <SelectItem value="standard">Standard</SelectItem>
+                            <SelectItem value="high">Enriched</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
                     </div>
                   </div>
+                )}
 
-                  <div className="space-y-2">
-                    <Label htmlFor="topic" className="text-sm font-medium">Lesson Topic *</Label>
-                    <Input
-                      id="topic"
-                      placeholder="e.g., Introduction to Fractions, Photosynthesis..."
-                      value={topic}
-                      onChange={(e) => setTopic(e.target.value)}
-                      className="h-10"
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="objectives" className="text-sm font-medium">
-                      Learning Objectives (Optional)
-                    </Label>
-                    <Textarea
-                      id="objectives"
-                      placeholder="Describe what students should learn..."
-                      value={objectives}
-                      onChange={(e) => setObjectives(e.target.value)}
-                      rows={3}
-                      className="resize-none"
-                    />
-                  </div>
-
-                  <Separator />
-
+                <div className="flex justify-end">
                   <Button
-                    variant="outline"
-                    onClick={() => setShowAdvanced(!showAdvanced)}
-                    className="flex items-center h-10 w-full sm:w-auto"
+                    onClick={handleGenerate}
+                    disabled={!isFormValid || isGenerating}
+                    className="h-11 px-4 sm:px-6 bg-gradient-to-r from-violet-500 to-purple-600 hover:from-violet-600 hover:to-purple-700 text-white text-sm sm:text-base"
                   >
-                    <Settings className="h-4 w-4 mr-2" />
-                    {showAdvanced ? "Hide Advanced Settings" : "Show Advanced Settings"}
+                    {isGenerating ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        <span className="hidden sm:inline">Generating...</span>
+                        <span className="sm:hidden">Generating</span>
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="w-4 h-4 mr-2" />
+                        <span className="hidden sm:inline">Generate Content</span>
+                        <span className="sm:hidden">Generate</span>
+                      </>
+                    )}
                   </Button>
-                  
-                  {showAdvanced && (
-                    <div className="space-y-4 p-3 sm:p-4 border rounded-lg bg-muted/20">
-                      <div className="space-y-2">
-                        <Label htmlFor="emotionalFlags" className="text-sm font-medium">
-                          Emotional Considerations (Optional)
-                        </Label>
-                        <Input
-                          id="emotionalFlags"
-                          placeholder="e.g., anxiety, low confidence"
-                          value={emotionalFlags}
-                          onChange={(e) => setEmotionalFlags(e.target.value)}
-                          className="h-10"
-                        />
-                      </div>
-                      
-                      <div className="space-y-2">
-                        <Label className="text-sm font-medium">Additional Options</Label>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                          <div className="flex items-center space-x-2 p-2 rounded-lg border">
-                            <Checkbox
-                              id="adaptiveLevel"
-                              checked={adaptiveLevel}
-                              onCheckedChange={setAdaptiveLevel}
-                            />
-                            <Label htmlFor="adaptiveLevel" className="text-sm">Adaptive Difficulty</Label>
-                          </div>
-                          <div className="flex items-center space-x-2 p-2 rounded-lg border">
-                            <Checkbox
-                              id="includeAssessment"
-                              checked={includeAssessment}
-                              onCheckedChange={setIncludeAssessment}
-                            />
-                            <Label htmlFor="includeAssessment" className="text-sm">Include Assessment</Label>
-                          </div>
-                          <div className="flex items-center space-x-2 p-2 rounded-lg border">
-                            <Checkbox
-                              id="multimediaSuggestions"
-                              checked={multimediaSuggestions}
-                              onCheckedChange={setMultimediaSuggestions}
-                            />
-                            <Label htmlFor="multimediaSuggestions" className="text-sm">Multimedia Suggestions</Label>
-                          </div>
-                          <div className="space-y-2">
-                            <Label htmlFor="language" className="text-sm font-medium">Language</Label>
-                            <Select value={language} onValueChange={setLanguage}>
-                              <SelectTrigger className="h-10">
-                                <SelectValue placeholder="Select language..." />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="English">English</SelectItem>
-                                <SelectItem value="Arabic">Arabic</SelectItem>
-                              </SelectContent>
-                            </Select>
-                          </div>
-                        </div>
-                      </div>
-                      
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div className="space-y-2">
-                          <Label htmlFor="instructionalDepth" className="text-sm font-medium">Instructional Depth</Label>
-                          <Select value={instructionalDepth} onValueChange={setInstructionalDepth}>
-                            <SelectTrigger className="h-10">
-                              <SelectValue placeholder="Select depth..." />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="low">Basic</SelectItem>
-                              <SelectItem value="standard">Standard</SelectItem>
-                              <SelectItem value="high">Advanced</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="contentVersion" className="text-sm font-medium">Content Version</Label>
-                          <Select value={contentVersion} onValueChange={setContentVersion}>
-                            <SelectTrigger className="h-10">
-                              <SelectValue placeholder="Select version..." />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="low">Simplified</SelectItem>
-                              <SelectItem value="standard">Standard</SelectItem>
-                              <SelectItem value="high">Enriched</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      </div>
-                    </div>
-                  )}
+                </div>
+              </CardContent>
+            </Card>
 
-                  <div className="flex justify-end">
-                    <Button
-                      onClick={handleGenerate}
-                      disabled={!isFormValid || isGenerating}
-                      className="h-11 px-4 sm:px-6 bg-gradient-to-r from-violet-500 to-purple-600 hover:from-violet-600 hover:to-purple-700 text-white text-sm sm:text-base"
-                    >
-                      {isGenerating ? (
-                        <>
-                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                          <span className="hidden sm:inline">Generating...</span>
-                          <span className="sm:hidden">Generating</span>
-                        </>
-                      ) : (
-                        <>
-                          <Sparkles className="w-4 h-4 mr-2" />
-                          <span className="hidden sm:inline">Generate Content</span>
-                          <span className="sm:hidden">Generate</span>
-                        </>
-                      )}
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Preview Section */}
+            {/* Preview Section - Full Width Below Form */}
+            {generatedContent && (
               <ContentPreview
                 content={generatedContent}
                 contentType={contentType}
@@ -908,8 +932,9 @@ const ContentGeneratorPage = () => {
                 isExported={isExported}
                 isSaved={isSaved}
                 isSaving={isSaving}
+                onGenerateSlides={contentType === 'presentation' ? () => setSlideDialogOpen(true) : undefined}
               />
-            </div>
+            )}
           </TabsContent>
 
           <TabsContent value="saved" className="space-y-6">

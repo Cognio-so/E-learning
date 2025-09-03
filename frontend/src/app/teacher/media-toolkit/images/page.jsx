@@ -1,6 +1,6 @@
 'use client'
 import React, { useEffect, useState, useCallback } from "react"
-import { Eye, Download, Trash2, Save } from "lucide-react"
+import { Eye, Download, Trash2, Save, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
@@ -221,13 +221,23 @@ const ImageGenerator = () => {
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-semibold">Generated Image</h3>
               <div className="flex gap-2">
-                <Button size="sm" variant="outline" onClick={() => handleDownload(images.currentImage)}>
+                <Button size="sm" variant="outline" onClick={() => handleDownload(images.currentImage)} disabled={images.isSaving}>
                   <Download className="h-4 w-4 mr-2" />
                   Download
                 </Button>
-                <Button size="sm" onClick={handleSave}>
-                  <Save className="h-4 w-4 mr-2" />
-                  Save
+                <Button size="sm" onClick={handleSave} disabled={images.isSaving}>
+                  {images.isSaving ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2" />
+                      Saving...
+                    </>
+                  ) : (
+                    <>
+                      <Save className="h-4 w-4 mr-2" />
+                      Save Image
+                    </>
+                  )}
+                  
                 </Button>
               </div>
             </div>

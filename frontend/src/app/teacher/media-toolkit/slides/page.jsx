@@ -38,6 +38,21 @@ const SlidesGenerator = ({ setGeneratedContent }) => {
   const [language, setLanguage] = useState('ENGLISH')
   const [verbosity, setVerbosity] = useState('standard')
   const [customInstructions, setCustomInstructions] = useState('')
+  const [template, setTemplate] = useState('default') // Add template state
+
+  // Template options
+  const templateOptions = [
+    { value: 'default', label: 'Default', description: 'Clean and professional' },
+    { value: 'aurora', label: 'Aurora', description: 'Vibrant and energetic' },
+    { value: 'lavender', label: 'Lavender', description: 'Soft and elegant' },
+    { value: 'monarch', label: 'Monarch', description: 'Bold and regal' },
+    { value: 'serene', label: 'Serene', description: 'Calm and peaceful' },
+    { value: 'iris', label: 'Iris', description: 'Creative and artistic' },
+    { value: 'clyde', label: 'Clyde', description: 'Modern and sleek' },
+    { value: 'adam', label: 'Adam', description: 'Classic and timeless' },
+    { value: 'nebula', label: 'Nebula', description: 'Space and cosmic' },
+    { value: 'bruno', label: 'Bruno', description: 'Dynamic and powerful' }
+  ]
 
   useEffect(() => {
     // Initialize saved presentations from database on component mount
@@ -60,6 +75,7 @@ const SlidesGenerator = ({ setGeneratedContent }) => {
         verbosity,
         customInstructions: customInstructions.trim(),
         gradeLevel: user?.grade || '', // Use teacher's grade automatically
+        template: template, // Add template to the data
       }
 
       await generatePresentation(presentationData)
@@ -209,6 +225,30 @@ const SlidesGenerator = ({ setGeneratedContent }) => {
                   </SelectContent>
                 </Select>
               </div>
+            </div>
+
+            {/* Template Selection */}
+            <div>
+              <Label className="text-sm font-medium text-gray-700 dark:text-gray-200 flex items-center gap-2">
+                <PresentationIcon className="h-4 w-4" />
+                Template Style
+              </Label>
+              <Select value={template} onValueChange={setTemplate}>
+                <SelectTrigger className="mt-1">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {templateOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      <div className="flex flex-col">
+                        <span className="font-medium">{option.label}</span>
+                        <span className="text-xs text-muted-foreground">{option.description}</span>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-gray-500 mt-1">Choose a visual style for your presentation</p>
             </div>
 
             <div className="flex items-center justify-between bg-gray-50 dark:bg-gray-700/50 p-4 rounded-lg">
