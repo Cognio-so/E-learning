@@ -38,3 +38,4 @@ rank_bm25
 python-dotenv
 nest-asyncio
 boto3
+webrtcvad
