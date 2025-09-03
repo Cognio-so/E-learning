@@ -28,7 +28,6 @@ python-multipart
 langchain_perplexity
 sounddevice
 # silero_vad  # This package doesn't exist on PyPI
-pyaudio
 numpy
 torch
 websockets
