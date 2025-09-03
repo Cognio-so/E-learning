@@ -321,17 +321,26 @@ def process_text_and_generate_speech(text_prompt: str):
 
 # --- Main Application Logic ---
 if __name__ == "__main__":
-    p = pyaudio.PyAudio()
     try:
-        stream = p.open(format=FORMAT,
-                        channels=CHANNELS,
-                        rate=SAMPLE_RATE,
-                        input=True,
-                        frames_per_buffer=CHUNK)
-    except Exception as e:
-        print(f"Audio input error: {e}")
-        p.terminate()
-        exit(1)
+        import pyaudio
+    except ImportError:
+        pyaudio = None
+        print("Warning: pyaudio not available - audio recording features will be disabled")
+
+    if pyaudio:
+        p = pyaudio.PyAudio()
+        try:
+            stream = p.open(format=FORMAT,
+                            channels=CHANNELS,
+                            rate=SAMPLE_RATE,
+                            input=True,
+                            frames_per_buffer=CHUNK)
+        except Exception as e:
+            print(f"Audio input error: {e}")
+            p.terminate()
+            exit(1)
+    else:
+        print("Audio input features are disabled due to missing pyaudio.")
 
     print("Application started. Listening for your voice.")
     
@@ -349,6 +358,10 @@ if __name__ == "__main__":
 
     try:
         while True:
+            if not pyaudio:
+                time.sleep(0.1) # Keep the loop alive if audio is disabled
+                continue
+
             try:
                 data = stream.read(CHUNK, exception_on_overflow=False)
             except IOError as e:
@@ -415,4 +428,5 @@ if __name__ == "__main__":
         if 'stream' in locals() and stream.is_active():
             stream.stop_stream()
             stream.close()
-        p.terminate()
+        if pyaudio:
+            p.terminate()
