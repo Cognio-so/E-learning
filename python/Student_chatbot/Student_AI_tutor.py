@@ -412,7 +412,7 @@ class AsyncRAGTutor:
         except Exception as e:
             logging.error(f"Error initializing ChatOpenAI: {e}")
             self.llm = ChatGoogleGenerativeAI(
-                model="gemini-1.5-flash-latest",
+                model="gemini-2.5-flash-lite",
                 temperature=self.config.temperature,
                 max_tokens=self.config.max_tokens,
                 google_api_key=self.config.google_api_key,
@@ -802,7 +802,7 @@ For regular queries that don't need image generation, simply respond with "use_l
                 try:
                     logging.info(f"Attempting to generate description for '{filename}' with Google's model.")
                     vision_model = ChatGoogleGenerativeAI(
-                    model="gemini-1.5-flash-latest",
+                    model="gemini-2.5-flash-lite",
                     max_tokens=self.config.max_tokens,
                     google_api_key=self.config.google_api_key,
                 )
