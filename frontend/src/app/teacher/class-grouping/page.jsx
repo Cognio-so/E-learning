@@ -11,7 +11,7 @@ import { Progress } from "@/components/ui/progress"
 import { Separator } from "@/components/ui/separator"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Input } from "@/components/ui/input"
-  import { 
+import { 
   Users, 
   TrendingUp, 
   AlertTriangle, 
@@ -36,11 +36,16 @@ import { Input } from "@/components/ui/input"
   Plus,
   FileText,
   Share2,
-  Download
+  Download,
+  MessageSquare,
+  ThumbsUp,
+  ThumbsDown
 } from 'lucide-react'
 import { subjects, grades } from '@/config/data'
 import useStudentStore from '@/store/useStudentStore'
 import useAssessmentStore from '@/store/useAssessmentStore'
+import useProgressStore from '@/store/useProgressStore'
+import useFeedbackStore from '@/store/useFeedbackStore'
 import { toast } from 'sonner'
 
 const ClassGroupingPage = () => {
@@ -54,6 +59,9 @@ const ClassGroupingPage = () => {
     performanceGrade: 'All',
     behavior: 'All'
   })
+  const [studentProgress, setStudentProgress] = useState({})
+  const [studentFeedback, setStudentFeedback] = useState({})
+  const [teacherReports, setTeacherReports] = useState(null)
 
   const { 
     students, 
@@ -71,10 +79,121 @@ const ClassGroupingPage = () => {
     fetchAssessments 
   } = useAssessmentStore()
 
+  const {
+    fetchUserProgress,
+    fetchLearningStats,
+    progress
+  } = useProgressStore()
+
+  const {
+    getUserFeedback,
+    feedback
+  } = useFeedbackStore()
+
   useEffect(() => {
     fetchStudents()
     fetchAssessments()
   }, [fetchStudents, fetchAssessments])
+
+  // Fetch progress and feedback data for all students
+  useEffect(() => {
+    const fetchStudentData = async () => {
+      if (students.length > 0) {
+        const progressData = {}
+        const feedbackData = {}
+        
+        for (const student of students) {
+          try {
+            // Fetch progress data
+            const progress = await fetchUserProgress(student._id)
+            progressData[student._id] = progress
+            
+            // Fetch feedback data
+            const feedback = await getUserFeedback(student._id)
+            feedbackData[student._id] = feedback
+          } catch (error) {
+            console.error(`Error fetching data for student ${student._id}:`, error)
+          }
+        }
+        
+        setStudentProgress(progressData)
+        setStudentFeedback(feedbackData)
+      }
+    }
+
+    fetchStudentData()
+  }, [students, fetchUserProgress, getUserFeedback])
+
+  // Calculate student performance metrics
+  const getStudentPerformance = (studentId) => {
+    const progress = studentProgress[studentId] || []
+    const assessments = progress.filter(p => p.resourceType === 'assessment' && p.status === 'completed')
+    
+    if (assessments.length === 0) {
+      return {
+        averageScore: 0,
+        totalAssessments: 0,
+        completionRate: 0,
+        totalResources: progress.length,
+        completedResources: progress.filter(p => p.status === 'completed').length
+      }
+    }
+
+    const totalScore = assessments.reduce((sum, p) => sum + (p.score || 0), 0)
+    const averageScore = Math.round(totalScore / assessments.length)
+    const totalResources = progress.length
+    const completedResources = progress.filter(p => p.status === 'completed').length
+    const completionRate = totalResources > 0 ? Math.round((completedResources / totalResources) * 100) : 0
+
+    return {
+      averageScore,
+      totalAssessments: assessments.length,
+      completionRate,
+      totalResources,
+      completedResources
+    }
+  }
+
+  // Calculate student feedback metrics
+  const getStudentFeedback = (studentId) => {
+    const feedback = studentFeedback[studentId] || []
+    
+    if (feedback.length === 0) {
+      return {
+        averageRating: 0,
+        totalFeedback: 0,
+        helpfulness: 'No feedback',
+        engagement: 'No feedback'
+      }
+    }
+
+    const totalRating = feedback.reduce((sum, f) => sum + f.rating, 0)
+    const averageRating = Math.round((totalRating / feedback.length) * 10) / 10
+    
+    // Get most common helpfulness and engagement
+    const helpfulnessCounts = {}
+    const engagementCounts = {}
+    
+    feedback.forEach(f => {
+      helpfulnessCounts[f.helpfulness] = (helpfulnessCounts[f.helpfulness] || 0) + 1
+      engagementCounts[f.engagement] = (engagementCounts[f.engagement] || 0) + 1
+    })
+    
+    const helpfulness = Object.keys(helpfulnessCounts).reduce((a, b) => 
+      helpfulnessCounts[a] > helpfulnessCounts[b] ? a : b
+    )
+    
+    const engagement = Object.keys(engagementCounts).reduce((a, b) => 
+      engagementCounts[a] > engagementCounts[b] ? a : b
+    )
+
+    return {
+      averageRating,
+      totalFeedback: feedback.length,
+      helpfulness,
+      engagement
+    }
+  }
 
   const getBehaviorColor = (behavior) => {
     switch (behavior) {
@@ -89,6 +208,12 @@ const ClassGroupingPage = () => {
     if (grade >= 90) return "text-green-600"
     if (grade >= 80) return "text-blue-600"
     if (grade >= 70) return "text-yellow-600"
+    return "text-red-600"
+  }
+
+  const getRatingColor = (rating) => {
+    if (rating >= 4) return "text-green-600"
+    if (rating >= 3) return "text-yellow-600"
     return "text-red-600"
   }
 
@@ -145,22 +270,28 @@ const ClassGroupingPage = () => {
 
       // Subject filter - check if student has any assessments in the selected subject
       const subjectMatch = filters.subject === 'All' || 
-        (student.assignedAssessments && student.assignedAssessments.some(assessment => 
-          assessment.subject === filters.subject
+        (studentProgress[student._id] && studentProgress[student._id].some(progress => 
+          progress.lessonId?.subject === filters.subject
         ))
 
-      // Performance Grade filter - use actual performance data if available
+      // Performance Grade filter - use actual performance data
+      const performance = getStudentPerformance(student._id)
       const performanceGradeMatch = filters.performanceGrade === 'All' || 
-        (student.averageScore && 
-          (filters.performanceGrade === 'A' && student.averageScore >= 90) ||
-          (filters.performanceGrade === 'B' && student.averageScore >= 80 && student.averageScore < 90) ||
-          (filters.performanceGrade === 'C' && student.averageScore >= 70 && student.averageScore < 80) ||
-          (filters.performanceGrade === 'D' && student.averageScore < 70)
+        (performance.averageScore && 
+          (filters.performanceGrade === 'A' && performance.averageScore >= 90) ||
+          (filters.performanceGrade === 'B' && performance.averageScore >= 80 && performance.averageScore < 90) ||
+          (filters.performanceGrade === 'C' && performance.averageScore >= 70 && performance.averageScore < 80) ||
+          (filters.performanceGrade === 'D' && performance.averageScore < 70)
         )
 
-      // Behavior filter - use actual behavior data if available
+      // Behavior filter - use actual feedback data
+      const feedback = getStudentFeedback(student._id)
       const behaviorMatch = filters.behavior === 'All' || 
-        (student.behavior && student.behavior === filters.behavior)
+        (feedback.averageRating && 
+          (filters.behavior === 'Excellent' && feedback.averageRating >= 4.5) ||
+          (filters.behavior === 'Good' && feedback.averageRating >= 3.5 && feedback.averageRating < 4.5) ||
+          (filters.behavior === 'Needs Improvement' && feedback.averageRating < 3.5)
+        )
 
       return searchMatch && subjectMatch && performanceGradeMatch && behaviorMatch
     })
@@ -170,10 +301,13 @@ const ClassGroupingPage = () => {
     const filteredStudents = getFilteredStudents(students)
     
     // Group students based on actual performance data
-    const studentsWithScores = filteredStudents.map(student => ({
-      ...student,
-      averageScore: student.averageScore || 75 // Default score if not available
-    }))
+    const studentsWithScores = filteredStudents.map(student => {
+      const performance = getStudentPerformance(student._id)
+      return {
+        ...student,
+        ...performance
+      }
+    })
     
     // Sort by performance score
     studentsWithScores.sort((a, b) => b.averageScore - a.averageScore)
@@ -215,7 +349,7 @@ const ClassGroupingPage = () => {
               Class Grouping & Student Management
             </h1>
             <p className="text-sm lg:text-base text-gray-600 dark:text-gray-300">
-              Manage student groups and assign assessments
+              Manage student groups and assign assessments with real-time data
             </p>
           </div>
           <Button className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 shadow-lg">
@@ -295,7 +429,7 @@ const ClassGroupingPage = () => {
               <span>Student Groups & Management</span>
             </CardTitle>
             <CardDescription className="text-sm lg:text-base">
-              Click on any student to view detailed profile and manage assessments
+              Click on any student to view detailed profile, progress, and feedback
             </CardDescription>
           </CardHeader>
           <CardContent className="p-4 lg:p-6">
@@ -364,9 +498,9 @@ const ClassGroupingPage = () => {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="All">All Behaviors</SelectItem>
-                      <SelectItem value="Excellent">Excellent</SelectItem>
-                      <SelectItem value="Good">Good</SelectItem>
-                      <SelectItem value="Needs Improvement">Needs Improvement</SelectItem>
+                      <SelectItem value="Excellent">Excellent (4.5+)</SelectItem>
+                      <SelectItem value="Good">Good (3.5-4.4)</SelectItem>
+                      <SelectItem value="Needs Improvement">Needs Improvement (&lt;3.5)</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -424,90 +558,118 @@ const ClassGroupingPage = () => {
                     </div>
                   ) : (
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 lg:gap-6">
-                      {groupStudents.map((student) => (
-                        <Card 
-                          key={student._id} 
-                          className="group bg-white/60 dark:bg-gray-800/60 backdrop-blur-sm border border-gray-200 dark:border-gray-600 hover:border-blue-300 dark:hover:border-blue-400 transition-all duration-300 hover:shadow-lg cursor-pointer"
-                          onClick={() => openStudentDialog(student)}
-                        >
-                          <CardContent className="p-4 lg:p-6">
-                            <div className="flex items-start space-x-4">
-                              <Avatar className="w-16 h-16 border-2 border-gray-200 dark:border-gray-600 group-hover:border-blue-300 dark:group-hover:border-blue-400 transition-colors">
-                                <AvatarImage src={student.avatar} alt={student.name} />
-                                <AvatarFallback className="bg-gradient-to-br from-blue-100 to-purple-100 dark:from-blue-900 dark:to-purple-900 text-gray-700 dark:text-white font-semibold">
-                                  {student.name.split(' ').map(n => n[0]).join('')}
-                                </AvatarFallback>
-                              </Avatar>
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center justify-between mb-3">
-                                  <h3 className="font-semibold text-gray-900 dark:text-white truncate">{student.name}</h3>
-                                  <Badge className={`${student.isVerified ? 'bg-green-100 text-green-800 border-green-200' : 'bg-yellow-100 text-yellow-800 border-yellow-200'} text-xs`}>
-                                    {student.isVerified ? 'Verified' : 'Pending'}
-                                  </Badge>
-                                </div>
-                                
-                                <div className="space-y-2">
-                                  <div className="flex items-center justify-between text-sm">
-                                    <span className="text-gray-600 dark:text-gray-300">Email:</span>
-                                    <span className="font-medium text-gray-900 dark:text-white truncate text-xs">{student.email}</span>
+                      {groupStudents.map((student) => {
+                        const performance = getStudentPerformance(student._id)
+                        const feedback = getStudentFeedback(student._id)
+                        
+                        return (
+                          <Card 
+                            key={student._id} 
+                            className="group bg-white/60 dark:bg-gray-800/60 backdrop-blur-sm border border-gray-200 dark:border-gray-600 hover:border-blue-300 dark:hover:border-blue-400 transition-all duration-300 hover:shadow-lg cursor-pointer"
+                            onClick={() => openStudentDialog(student)}
+                          >
+                            <CardContent className="p-4 lg:p-6">
+                              <div className="flex items-start space-x-4">
+                                <Avatar className="w-16 h-16 border-2 border-gray-200 dark:border-gray-600 group-hover:border-blue-300 dark:group-hover:border-blue-400 transition-colors">
+                                  <AvatarImage src={student.avatar} alt={student.name} />
+                                  <AvatarFallback className="bg-gradient-to-br from-blue-100 to-purple-100 dark:from-blue-900 dark:to-purple-900 text-gray-700 dark:text-white font-semibold">
+                                    {student.name.split(' ').map(n => n[0]).join('')}
+                                  </AvatarFallback>
+                                </Avatar>
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center justify-between mb-3">
+                                    <h3 className="font-semibold text-gray-900 dark:text-white truncate">{student.name}</h3>
+                                    <Badge className={`${student.isVerified ? 'bg-green-100 text-green-800 border-green-200' : 'bg-yellow-100 text-yellow-800 border-yellow-200'} text-xs`}>
+                                      {student.isVerified ? 'Verified' : 'Pending'}
+                                    </Badge>
                                   </div>
                                   
-                                  <div className="flex items-center justify-between text-sm">
-                                    <span className="text-gray-600 dark:text-gray-300">Role:</span>
-                                    <span className="font-medium text-gray-900 dark:text-white capitalize">{student.role}</span>
-                                  </div>
-                                  
-                                  <div className="flex items-center justify-between text-sm">
-                                    <span className="text-gray-600 dark:text-gray-300">Joined:</span>
-                                    <span className="font-medium text-gray-900 dark:text-white text-xs">
-                                      {new Date(student.createdAt).toLocaleDateString()}
-                                    </span>
-                                  </div>
-                                  
-                                  {student.averageScore && (
+                                  <div className="space-y-2">
                                     <div className="flex items-center justify-between text-sm">
-                                      <span className="text-gray-600 dark:text-gray-300">Avg Score:</span>
-                                      <span className={`font-medium ${getGradeColor(student.averageScore)}`}>
-                                        {student.averageScore}%
+                                      <span className="text-gray-600 dark:text-gray-300">Email:</span>
+                                      <span className="font-medium text-gray-900 dark:text-white truncate text-xs">{student.email}</span>
+                                    </div>
+                                    
+                                    <div className="flex items-center justify-between text-sm">
+                                      <span className="text-gray-600 dark:text-gray-300">Role:</span>
+                                      <span className="font-medium text-gray-900 dark:text-white capitalize">{student.role}</span>
+                                    </div>
+                                    
+                                    <div className="flex items-center justify-between text-sm">
+                                      <span className="text-gray-600 dark:text-gray-300">Joined:</span>
+                                      <span className="font-medium text-gray-900 dark:text-white text-xs">
+                                        {new Date(student.createdAt).toLocaleDateString()}
                                       </span>
                                     </div>
-                                  )}
+                                    
+                                    {/* Performance Metrics */}
+                                    {performance.averageScore > 0 && (
+                                      <div className="flex items-center justify-between text-sm">
+                                        <span className="text-gray-600 dark:text-gray-300">Avg Score:</span>
+                                        <span className={`font-medium ${getGradeColor(performance.averageScore)}`}>
+                                          {performance.averageScore}%
+                                        </span>
+                                      </div>
+                                    )}
+                                    
+                                    {performance.completionRate > 0 && (
+                                      <div className="flex items-center justify-between text-sm">
+                                        <span className="text-gray-600 dark:text-gray-300">Completion:</span>
+                                        <span className="font-medium text-gray-900 dark:text-white">
+                                          {performance.completionRate}%
+                                        </span>
+                                      </div>
+                                    )}
+                                    
+                                    {/* Feedback Metrics */}
+                                    {feedback.averageRating > 0 && (
+                                      <div className="flex items-center justify-between text-sm">
+                                        <span className="text-gray-600 dark:text-gray-300">Rating:</span>
+                                        <div className="flex items-center space-x-1">
+                                          <Star className="w-3 h-3 text-yellow-500 fill-current" />
+                                          <span className={`font-medium ${getRatingColor(feedback.averageRating)}`}>
+                                            {feedback.averageRating}/5
+                                          </span>
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
                                 </div>
                               </div>
-                            </div>
-                            
-                            <div className="mt-4 flex items-center justify-between">
-                              <Badge variant="outline" className="text-xs dark:border-gray-600 dark:text-gray-300">
-                                Student
-                              </Badge>
-                              <div className="flex space-x-2">
-                                <Button 
-                                  variant="ghost" 
-                                  size="sm" 
-                                  className="opacity-0 group-hover:opacity-100 transition-opacity h-8 w-8 p-0"
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    openStudentDialog(student)
-                                  }}
-                                >
-                                  <Eye className="w-4 h-4" />
-                                </Button>
-                                <Button 
-                                  variant="ghost" 
-                                  size="sm" 
-                                  className="opacity-0 group-hover:opacity-100 transition-opacity text-red-600 hover:text-red-700 h-8 w-8 p-0"
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    handleDeleteStudent(student._id, student.name)
-                                  }}
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                </Button>
+                              
+                              <div className="mt-4 flex items-center justify-between">
+                                <Badge variant="outline" className="text-xs dark:border-gray-600 dark:text-gray-300">
+                                  Student
+                                </Badge>
+                                <div className="flex space-x-2">
+                                  <Button 
+                                    variant="ghost" 
+                                    size="sm" 
+                                    className="opacity-0 group-hover:opacity-100 transition-opacity h-8 w-8 p-0"
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      openStudentDialog(student)
+                                    }}
+                                  >
+                                    <Eye className="w-4 h-4" />
+                                  </Button>
+                                  <Button 
+                                    variant="ghost" 
+                                    size="sm" 
+                                    className="opacity-0 group-hover:opacity-100 transition-opacity text-red-600 hover:text-red-700 h-8 w-8 p-0"
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      handleDeleteStudent(student._id, student.name)
+                                    }}
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </Button>
+                                </div>
                               </div>
-                            </div>
-                          </CardContent>
-                        </Card>
-                      ))}
+                            </CardContent>
+                          </Card>
+                        )
+                      })}
                     </div>
                   )}
                 </TabsContent>
@@ -536,7 +698,7 @@ const ClassGroupingPage = () => {
                       </div>
                     </DialogTitle>
                     <DialogDescription className="dark:text-gray-400">
-                      Student profile and assessment management
+                      Student profile, progress, and feedback management
                     </DialogDescription>
                   </DialogHeader>
 
@@ -578,6 +740,120 @@ const ClassGroupingPage = () => {
                             </span>
                           </div>
                         </div>
+                      </CardContent>
+                    </Card>
+
+                    {/* Performance Metrics */}
+                    <Card className="dark:bg-gray-800 dark:border-gray-700">
+                      <CardHeader>
+                        <CardTitle className="flex items-center space-x-2">
+                          <TrendingUp className="w-5 h-5" />
+                          <span>Performance Metrics</span>
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-4">
+                        {(() => {
+                          const performance = getStudentPerformance(selectedStudent._id)
+                          return (
+                            <>
+                              <div className="grid grid-cols-2 gap-4">
+                                <div className="text-center p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                                  <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">
+                                    {performance.averageScore}%
+                                  </p>
+                                  <p className="text-sm text-gray-600 dark:text-gray-300">Average Score</p>
+                                </div>
+                                <div className="text-center p-4 bg-green-50 dark:bg-green-900/20 rounded-lg">
+                                  <p className="text-2xl font-bold text-green-600 dark:text-green-400">
+                                    {performance.completionRate}%
+                                  </p>
+                                  <p className="text-sm text-gray-600 dark:text-gray-300">Completion Rate</p>
+                                </div>
+                              </div>
+                              
+                              <div className="space-y-3">
+                                <div className="flex justify-between items-center">
+                                  <span className="text-sm font-medium dark:text-gray-200">Total Assessments</span>
+                                  <span className="text-sm font-semibold dark:text-white">
+                                    {performance.totalAssessments}
+                                  </span>
+                                </div>
+                                
+                                <div className="flex justify-between items-center">
+                                  <span className="text-sm font-medium dark:text-gray-200">Completed Resources</span>
+                                  <span className="text-sm font-semibold dark:text-white">
+                                    {performance.completedResources}/{performance.totalResources}
+                                  </span>
+                                </div>
+                              </div>
+                            </>
+                          )
+                        })()}
+                      </CardContent>
+                    </Card>
+
+                    {/* Feedback & Ratings */}
+                    <Card className="dark:bg-gray-800 dark:border-gray-700">
+                      <CardHeader>
+                        <CardTitle className="flex items-center space-x-2">
+                          <MessageSquare className="w-5 h-5" />
+                          <span>Feedback & Ratings</span>
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-4">
+                        {(() => {
+                          const feedback = getStudentFeedback(selectedStudent._id)
+                          return (
+                            <>
+                              {feedback.averageRating > 0 ? (
+                                <>
+                                  <div className="text-center p-4 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg">
+                                    <div className="flex items-center justify-center space-x-1 mb-2">
+                                      {[1, 2, 3, 4, 5].map((star) => (
+                                        <Star 
+                                          key={star} 
+                                          className={`w-5 h-5 ${star <= feedback.averageRating ? 'text-yellow-500 fill-current' : 'text-gray-300'}`} 
+                                        />
+                                      ))}
+                                    </div>
+                                    <p className="text-2xl font-bold text-yellow-600 dark:text-yellow-400">
+                                      {feedback.averageRating}/5
+                                    </p>
+                                    <p className="text-sm text-gray-600 dark:text-gray-300">Average Rating</p>
+                                  </div>
+                                  
+                                  <div className="space-y-3">
+                                    <div className="flex justify-between items-center">
+                                      <span className="text-sm font-medium dark:text-gray-200">Total Feedback</span>
+                                      <span className="text-sm font-semibold dark:text-white">
+                                        {feedback.totalFeedback}
+                                      </span>
+                                    </div>
+                                    
+                                    <div className="flex justify-between items-center">
+                                      <span className="text-sm font-medium dark:text-gray-200">Helpfulness</span>
+                                      <span className="text-sm font-semibold dark:text-white capitalize">
+                                        {feedback.helpfulness.replace('_', ' ')}
+                                      </span>
+                                    </div>
+                                    
+                                    <div className="flex justify-between items-center">
+                                      <span className="text-sm font-medium dark:text-gray-200">Engagement</span>
+                                      <span className="text-sm font-semibold dark:text-white capitalize">
+                                        {feedback.engagement.replace('_', ' ')}
+                                      </span>
+                                    </div>
+                                  </div>
+                                </>
+                              ) : (
+                                <div className="text-center py-8">
+                                  <MessageSquare className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                                  <p className="text-gray-600 dark:text-gray-300">No feedback available yet</p>
+                                </div>
+                              )}
+                            </>
+                          )
+                        })()}
                       </CardContent>
                     </Card>
 

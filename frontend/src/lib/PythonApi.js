@@ -220,11 +220,29 @@ class PythonApiClient {
       };
 
       console.log('Starting chatbot stream with payload:', payload);
-      return fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
+      console.log('Making request to:', url);
+      
+      try {
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        
+        console.log('Response status:', response.status);
+        console.log('Response headers:', response.headers);
+        
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error('Error response:', errorText);
+          throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
+        }
+        
+        return response;
+      } catch (error) {
+        console.error('Fetch error:', error);
+        throw error;
+      }
     }
 
     // NEW: Document upload endpoint for chatbot
@@ -392,6 +410,96 @@ class PythonApiClient {
       });
     }
   
+    // NEW: Voice functionality methods
+    async startVoiceSession(studentData) {
+      const url = `${this.baseUrl.replace('http', 'ws')}/ws/voice`;
+      console.log('Connecting to voice WebSocket:', url);
+      return new WebSocket(url);
+    }
+
+    // NEW: Teacher Voice functionality methods
+    async startTeacherVoiceSession(teacherData) {
+      const url = `${this.baseUrl.replace('http', 'ws')}/ws/teacher-voice`;
+      console.log('Connecting to teacher voice WebSocket:', url);
+      return new WebSocket(url);
+    }
+
+    // NEW: Teacher bulk data submission endpoint
+    async submitTeacherBulkData(teacherData) {
+      const pythonSchema = {
+        teacher_name: teacherData.teacherName,
+        student_details_with_reports: teacherData.students,
+        generated_content_details: teacherData.content,
+        feedback_data: teacherData.feedback,
+        learning_analytics: teacherData.analytics
+      };
+
+      console.log('Sending teacher bulk data:', pythonSchema);
+      return this.makeRequest('/teacher_bulk_data_endpoint', {
+        method: 'POST',
+        body: JSON.stringify(pythonSchema)
+      });
+    }
+
+    // NEW: Teacher voice chat endpoint
+    async startTeacherVoiceChat(teacherData, sessionId) {
+      const url = `${this.baseUrl}/teacher_voice_chat_endpoint`;
+      
+      // Transform teacher data to match backend schema
+      const transformedTeacherData = {
+        teacher_name: teacherData.teacherName,
+        teacher_id: teacherData.teacherId,
+        
+        // Student data
+        student_details_with_reports: teacherData.students || [],
+        student_performance: teacherData.studentPerformance || {},
+        student_overview: teacherData.studentOverview || {},
+        top_performers: teacherData.topPerformers || [],
+        subject_performance: teacherData.subjectPerformance || [],
+        behavior_analysis: teacherData.behaviorAnalysis || {},
+        attendance_data: teacherData.attendanceData || {},
+        
+        // Content and assessments
+        generated_content_details: teacherData.content || [],
+        assessment_details: teacherData.assessments || [],
+        
+        // Media toolkit
+        media_toolkit: teacherData.mediaToolkit || {},
+        media_counts: teacherData.mediaCount || {},
+        
+        // Progress and feedback
+        progress_data: teacherData.progress || {},
+        feedback_data: teacherData.feedback || [],
+        
+        // Learning analytics
+        learning_analytics: teacherData.learningAnalytics || {}
+      };
+
+      const payload = {
+        session_id: sessionId,
+        teacher_data: transformedTeacherData
+      };
+
+      console.log('Starting teacher voice chat with comprehensive payload:', payload);
+      
+      try {
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
+        }
+        
+        return response;
+      } catch (error) {
+        console.error('Teacher voice chat error:', error);
+        throw error;
+      }
+    }
   }
   
   export default new PythonApiClient(); 
