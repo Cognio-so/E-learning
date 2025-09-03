@@ -47,13 +47,14 @@ import { subjects, grades, contentTypes } from "@/config/data";
 import useContentStore from "@/store/useContentStore";
 import useAuthStore from "@/store/useAuthStore";
 import useLessonStore from "@/store/useLessonStore";
+import useMediaStore from "@/store/useMediaStore";
 
 // Import remarkGfm directly to avoid the preset error
 import remarkGfm from "remark-gfm";
 
 // Lazy load heavy components
 const ReactMarkdown = lazy(() => import("react-markdown"));
-const PPTXViewer = lazy(() => import("@/components/pptx-viewer"));
+const PPTXViewer = lazy(() => import("@/components/pptx-viewer").then(module => ({ default: module.default })));
 
 // Import Markdown styles directly since it's a named export
 import { MarkdownStyles } from "@/components/chat/Markdown";
@@ -327,6 +328,11 @@ const ContentGeneratorPage = () => {
     contentIds: []
   });
 
+  // Add this useEffect to monitor state changes
+  useEffect(() => {
+    console.log('presentationResult state changed:', presentationResult);
+  }, [presentationResult]);
+
   // Memoized form data - Use teacher's grade automatically
   const formData = useMemo(() => ({
           subject: selectedSubject,
@@ -506,13 +512,13 @@ const ContentGeneratorPage = () => {
   }, [deleteContent]);
 
   const handleGenerateSlides = useCallback(async () => {
-  if (!generatedContent) {
-    toast.error('No content to generate slides from');
-    return;
-  }
+    if (!generatedContent) {
+      toast.error('No content to generate slides from');
+      return;
+    }
 
-  setIsGeneratingSlides(true);
-  try {
+    setIsGeneratingSlides(true);
+    try {
       const slideData = {
         content: generatedContent,
         topic: topic,
@@ -521,27 +527,54 @@ const ContentGeneratorPage = () => {
       };
 
       const result = await generateSlidesFromContent(slideData);
+      console.log('Slide generation result:', result); // Debug log
+      
+      // Handle the exact response structure you're getting
+      let presentation = null;
       
       if (result && result.presentation) {
-        const presentationResult = {
-          presentationUrl: result.presentation.presentationUrl || null,
-          downloadUrl: result.presentation.downloadUrl || result.presentation.presentationUrl || null,
-          slideCount: result.presentation.slideCount || slideCount,
-          status: result.presentation.status || 'SUCCESS',
-          errorMessage: result.presentation.errorMessage || null
-        };
-        setPresentationResult(presentationResult);
+        const presData = result.presentation;
+        
+        // Extract URL from the exact structure you're getting
+        // The URL is in task_result.url or task_info.url
+        const presentationUrl = presData.task_result?.url || presData.task_info?.url;
+        const status = presData.task_status || 'SUCCESS';
+        
+        console.log('presData:', presData); // Debug the structure
+        console.log('task_result:', presData.task_result); // Debug task_result
+        console.log('task_info:', presData.task_info); // Debug task_info
+        console.log('Extracted URL:', presentationUrl); // Debug extracted URL
+        
+        if (presentationUrl) {
+          presentation = {
+            presentationUrl: presentationUrl,
+            downloadUrl: presentationUrl,
+            slideCount: slideCount,
+            status: status,
+            taskId: presData.task_id
+          };
+          
+          console.log('Extracted presentation data:', presentation);
+        } else {
+          console.error('No URL found in response structure:', presData);
+        }
+      }
+      
+      if (presentation && presentation.presentationUrl) {
+        console.log('About to set presentation result:', presentation); // Debug before setting state
+        setPresentationResult(presentation);
+        console.log('State should now be updated'); // Debug after setting state
         toast.success('Slides generated successfully!');
       } else {
-        console.error('Invalid response structure:', result);
-        toast.error('Invalid response from server');
+        console.error('No valid presentation data received:', result);
+        toast.error('Failed to generate slides - no valid data received');
+      }
+    } catch (error) {
+      console.error('Slide generation error:', error);
+      toast.error('Failed to generate slides');
+    } finally {
+      setIsGeneratingSlides(false);
     }
-  } catch (error) {
-    console.error('Slide generation error:', error);
-    toast.error('Failed to generate slides');
-  } finally {
-    setIsGeneratingSlides(false);
-  }
   }, [generatedContent, topic, slideCount, language, generateSlidesFromContent]);
 
   const handleEditContent = (content) => {
@@ -932,7 +965,7 @@ const ContentGeneratorPage = () => {
                 isExported={isExported}
                 isSaved={isSaved}
                 isSaving={isSaving}
-                onGenerateSlides={contentType === 'presentation' ? () => setSlideDialogOpen(true) : undefined}
+                onGenerateSlides={() => setSlideDialogOpen(true)} // Always show the button
               />
             )}
           </TabsContent>
@@ -974,6 +1007,7 @@ const ContentGeneratorPage = () => {
                       className="h-11"
                     />
                   </div>
+                  <p className="text-xs text-slate-500">Recommended: 10-15 slides for optimal presentation</p>
                 </div>
                 <DialogFooter className="pt-4">
                   <Button 
@@ -1008,44 +1042,69 @@ const ContentGeneratorPage = () => {
                 </DialogDescription>
               </DialogHeader>
               <div className="p-0">
-                  <Suspense fallback={<LoadingFallback />}>
-                <PPTXViewer
-                  presentationUrl={presentationResult.presentationUrl || presentationResult.url}
-                  downloadUrl={presentationResult.downloadUrl || presentationResult.presentationUrl || presentationResult.url}
-                  title={`${selectedSubject} - ${topic}`}
-                  slideCount={presentationResult.slideCount || slideCount}
-                  status={presentationResult.status || 'SUCCESS'}
-                  errorMessage={presentationResult.errorMessage || null}
-                  onSave={async () => {
-                    try {
-                      const response = await fetch('/api/presentations', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
+                {/* Debug: Log the props being passed to PPTXViewer */}
+                {console.log('PPTXViewer props:', {
+                  presentationUrl: presentationResult.presentationUrl,
+                  downloadUrl: presentationResult.downloadUrl,
+                  title: `${selectedSubject} - ${topic}`,
+                  slideCount: presentationResult.slideCount || slideCount,
+                  status: presentationResult.status || 'SUCCESS',
+                  errorMessage: presentationResult.errorMessage
+                })}
+                
+                <Suspense fallback={<LoadingFallback />}>
+                  <PPTXViewer
+                    presentationUrl={presentationResult.presentationUrl}
+                    downloadUrl={presentationResult.downloadUrl}
+                    title={`${selectedSubject} - ${topic}`}
+                    slideCount={presentationResult.slideCount || slideCount}
+                    status={presentationResult.status || 'SUCCESS'}
+                    errorMessage={presentationResult.errorMessage}
+                    onSave={async () => {
+                      try {
+                        // Save to media store instead of direct API call
+                        const slideData = {
                           title: `${selectedSubject} - ${topic}`,
                           topic: topic,
                           slideCount: presentationResult.slideCount || slideCount,
                           language: language,
-                          presentationUrl: presentationResult.presentationUrl || presentationResult.url,
-                          downloadUrl: presentationResult.downloadUrl || presentationResult.presentationUrl || presentationResult.url,
+                          presentationUrl: presentationResult.presentationUrl,
+                          downloadUrl: presentationResult.downloadUrl,
                           status: presentationResult.status || 'SUCCESS',
-                          errorMessage: presentationResult.errorMessage || null
-                        })
-                      });
-                      if (response.ok) {
-                        toast.success('Presentation saved to library');
-                        setSlideDialogOpen(false);
-                      } else {
+                          errorMessage: presentationResult.errorMessage,
+                          contentType: 'presentation',
+                          subject: selectedSubject,
+                          grade: user?.grade
+                        };
+                        
+                        // Use the media store to save the slide
+                        const { saveSlide } = useMediaStore.getState();
+                        if (saveSlide) {
+                          await saveSlide(slideData);
+                          toast.success('Presentation saved to library');
+                          setSlideDialogOpen(false);
+                        } else {
+                          // Fallback to direct API call
+                          const response = await fetch('/api/slides', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(slideData)
+                          });
+                          if (response.ok) {
+                            toast.success('Presentation saved to library');
+                            setSlideDialogOpen(false);
+                          } else {
+                            toast.error('Failed to save presentation');
+                          }
+                        }
+                      } catch (error) {
+                        console.error('Save error:', error);
                         toast.error('Failed to save presentation');
                       }
-                    } catch (error) {
-                      console.error('Save error:', error);
-                      toast.error('Failed to save presentation');
-                    }
-                  }}
-                  isSaving={false}
-                />
-                  </Suspense>
+                    }}
+                    isSaving={false}
+                  />
+                </Suspense>
               </div>
             </>
           )}

@@ -10,6 +10,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, validator
 from dotenv import load_dotenv
 from fastapi.concurrency import run_in_threadpool
+import json
+import asyncio
+import aiohttp
+from datetime import datetime
 
 # --- Configure Logging ---
 logging.basicConfig(
@@ -44,6 +48,13 @@ from AI_voice_functionality import (
     AI_STUDY_BUDDY_PROMPT
 )
 
+# Import Tavily for web search in voice
+try:
+    from tavily import TavilyClient
+    tavily_client = TavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
+except:
+    tavily_client = None
+
 # Import the Perplexity chat instance from your module
 try:
     from media_toolkit.websearch_schema_based import chat as pplx_chat
@@ -53,6 +64,7 @@ except Exception as e:
 
 # Import the cloud storage manager
 from storage import CloudflareR2Storage
+
 
 # --- FastAPI App Initialization ---
 logger.info("Starting AI Education Platform API...")
@@ -81,6 +93,7 @@ try:
 
     # Initialize Tutor Sessions Dictionary
     tutor_sessions: Dict[str, AsyncRAGTutor] = {}
+    teacher_sessions: Dict[str, Dict[str, Any]] = {} # New: Dictionary to store teacher sessions
 
     # Initialize other components
     slide_generator = SlideSpeakGenerator()
@@ -233,201 +246,323 @@ async def voice_chat_endpoint(schema: VoiceChatSchema):
     }
     return StreamingResponse(event_stream(), headers=headers, media_type="text/event-stream")
 
-# Add WebSocket support for real-time voice with proper user control
-from fastapi import WebSocket, WebSocketDisconnect
-import asyncio
-import numpy as np
-import io
-import wave
-import base64
-import tempfile
-import os
+# Helper function for web search
+async def perform_web_search(query: str) -> str:
+    """Perform a web search using Tavily."""
+    try:
+        if tavily_client:
+            response = await run_in_threadpool(
+                tavily_client.search, 
+                query=query, 
+                search_depth="advanced", 
+                max_results=3
+            )
+            return json.dumps(response.get("results", []))
+        else:
+            return json.dumps([{"error": "Web search not available"}])
+    except Exception as e:
+        logger.error(f"Web search error: {e}")
+        return json.dumps([{"error": str(e)}])
 
+# Replace the existing WebSocket voice endpoint with real-time voice
 @app.websocket("/ws/voice")
 async def websocket_voice_endpoint(websocket: WebSocket):
+    """Real-time voice conversation using OpenAI's real-time API."""
     await websocket.accept()
     
-    # Initialize voice processing components
-    from AI_voice_functionality import (
-        transcribe_audio, 
-        get_comprehensive_answer_stream,
-        text_to_speech,
-        AI_STUDY_BUDDY_PROMPT
-    )
-    
-    # Audio buffer with proper user control
-    audio_buffer = []
-    is_processing = False
-    is_listening = False
-    user_activated = False  # Only process when user explicitly activates
+    # Store student data and session info
+    student_data = None
+    openai_ws = None
+    openai_session = None
+    response_task = None
     
     try:
         while True:
-            # Receive real-time audio chunks
             data = await websocket.receive_json()
             
-            if data["type"] == "start_listening":
-                is_listening = True
-                user_activated = True  # User has activated voice mode
-                audio_buffer = []  # Clear buffer
-                await websocket.send_json({
-                    "type": "listening_started",
-                    "message": "Ready to listen"
-                })
+            if data["type"] == "start_session":
+                # Initialize real-time voice session with student data
+                student_data = data.get("student_data", {})
+                logger.info(f"Received student data keys: {list(student_data.keys())}")
+                logger.info(f"Student data sample: {dict(list(student_data.items())[:5])}")
                 
-            elif data["type"] == "audio_chunk":
-                if not is_listening or is_processing or not user_activated:
-                    continue
-                    
-                # Convert audio data to proper format
-                audio_chunk = np.array(data["data"], dtype=np.float32)
+                # Connect to OpenAI's real-time API
+                openai_api_key = os.getenv("OPENAI_API_KEY")
                 
-                # Only buffer audio when user is speaking AND voice is activated
-                if data.get("is_speaking", False):
-                    audio_buffer.extend(audio_chunk)
-                
-            elif data["type"] == "process_audio":
-                # Only process if user has activated voice mode
-                if not user_activated or is_processing or len(audio_buffer) == 0:
-                    continue
-                    
-                is_processing = True
-                is_listening = False
-                
-                # Send processing status
-                await websocket.send_json({
-                    "type": "processing",
-                    "message": "Processing speech..."
-                })
-                
-                try:
-                    # Convert buffer to audio file format for OpenAI Whisper
-                    audio_data = np.array(audio_buffer, dtype=np.float32)
-                    audio_buffer = []  # Clear buffer
-                    
-                    # Only process if we have enough audio (at least 1 second)
-                    if len(audio_data) < 16000:  # Less than 1 second
-                        logger.info("Audio too short, ignoring")
-                        await websocket.send_json({
-                            "type": "error",
-                            "message": "Audio too short to process"
-                        })
-                        continue
-                    
-                    # Create a proper WAV file that OpenAI can recognize
-                    with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as temp_file:
-                        # Create WAV file with proper headers
-                        with wave.open(temp_file.name, 'wb') as wf:
-                            wf.setnchannels(1)  # Mono
-                            wf.setsampwidth(2)  # 16-bit
-                            wf.setframerate(16000)  # 16kHz
-                            # Convert float32 to int16 properly
-                            audio_int16 = (audio_data * 32767).astype(np.int16)
-                            wf.writeframes(audio_int16.tobytes())
-                    
-                    logger.info(f"Processing audio: {len(audio_data)} samples, saved to {temp_file.name}")
-                    
-                    # Open the file for transcription
-                    with open(temp_file.name, 'rb') as audio_file:
-                        # Transcribe the audio using OpenAI Whisper
-                        transcription = await asyncio.get_event_loop().run_in_executor(
-                            None, transcribe_audio, audio_file
-                        )
-                    
-                    # Clean up temporary file
-                    try:
-                        os.unlink(temp_file.name)
-                    except:
-                        pass
-                    
-                    if transcription and transcription.strip():
-                        logger.info(f"Transcription: {transcription}")
-                        
-                        # Send transcription back
-                        await websocket.send_json({
-                            "type": "transcription",
-                            "text": transcription
-                        })
-                        
-                        # Generate AI response
-                        response_stream = get_comprehensive_answer_stream(transcription)
-                        full_response = ""
-                        
-                        for chunk in response_stream:
-                            if chunk:
-                                full_response += chunk
-                                await websocket.send_json({
-                                    "type": "response_chunk",
-                                    "content": chunk
-                                })
-                        
-                        # Generate TTS audio using OpenAI TTS
-                        try:
-                            logger.info(f"Generating TTS for response: {full_response[:100]}...")
-                            audio_data = await asyncio.get_event_loop().run_in_executor(
-                                None, text_to_speech, full_response
-                            )
-                            
-                            if audio_data:
-                                logger.info(f"TTS generated successfully, audio size: {len(audio_data)} bytes")
-                                # Encode audio as base64 for sending over WebSocket
-                                audio_b64 = base64.b64encode(audio_data).decode('utf-8')
-                                audio_url = f"data:audio/mp3;base64,{audio_b64}"
-                                
-                                # Send completion with audio
-                                await websocket.send_json({
-                                    "type": "response_complete",
-                                    "full_response": full_response,
-                                    "audio_url": audio_url,
-                                    "audio_format": "mp3"
-                                })
-                                logger.info("Sent response with TTS audio")
-                            else:
-                                logger.warning("TTS generation returned None")
-                                # Send completion without audio
-                                await websocket.send_json({
-                                    "type": "response_complete",
-                                    "full_response": full_response
-                                })
-                                
-                        except Exception as e:
-                            logger.error(f"TTS error: {e}", exc_info=True)
-                            # Send completion without audio
-                            await websocket.send_json({
-                                "type": "response_complete",
-                                "full_response": full_response
-                            })
-                    else:
-                        logger.warning("No transcription generated")
-                        await websocket.send_json({
-                            "type": "error",
-                            "message": "Could not transcribe audio"
-                        })
-                        
-                except Exception as e:
-                    logger.error(f"Voice processing error: {e}", exc_info=True)
+                if not openai_api_key:
                     await websocket.send_json({
                         "type": "error",
-                        "message": f"Processing error: {str(e)}"
+                        "message": "OpenAI API key not configured"
                     })
+                    continue
                 
-                finally:
-                    is_processing = False
-                    is_listening = True
-                    user_activated = False  # Reset user activation
-                        
-            elif data["type"] == "stop":
-                user_activated = False
+                # Create connection to OpenAI real-time API
+                # Use gpt-4o-realtime-preview-2024-10-01 for the real-time model
+                openai_url = "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01"
+                openai_headers = {
+                    "Authorization": f"Bearer {openai_api_key}",
+                    "OpenAI-Beta": "realtime=v1"
+                }
+                
+                try:
+                    # Connect to OpenAI real-time API
+                    openai_session = aiohttp.ClientSession()
+                    openai_ws = await openai_session.ws_connect(
+                        openai_url,
+                        headers=openai_headers,
+                        max_msg_size=10_000_000
+                    )
+                    
+                    # Send session configuration to OpenAI
+                    # Create comprehensive personalized prompt based on student data
+                    student_name = student_data.get('name', 'Student')
+                    student_grade = student_data.get('grade', '8')
+                    student_subjects = student_data.get('subjects', ['General Studies'])
+                    
+                    # Extract learning insights with better defaults
+                    learning_stats = student_data.get('learningStats', {}) or {}
+                    achievements = student_data.get('achievements', []) or []
+                    recent_lessons = student_data.get('recentLessons', []) or student_data.get('lessons', []) or []
+                    incomplete_assessments = student_data.get('incompleteAssessments', []) or []
+                    study_preferences = student_data.get('studyPreferences', {}) or {}
+                    performance_insights = student_data.get('performanceInsights', {}) or {}
+                    
+                    # Additional data extraction
+                    progress = student_data.get('progress', {}) or {}
+                    user_progress = student_data.get('userProgress', []) or []
+                    resources = student_data.get('resources', []) or []
+                    assessments = student_data.get('assessments', []) or []
+                    
+                    logger.info(f"Processed student data - achievements: {len(achievements)}, lessons: {len(recent_lessons)}, assessments: {len(assessments)}")
+                    
+                    prompt = f"""You are {student_name}'s personalized AI study buddy and tutor. You have comprehensive knowledge about their learning journey and academic progress.
+
+STUDENT PROFILE:
+- Name: {student_name}
+- Grade: {student_grade}
+- Subjects: {', '.join(student_subjects)}
+- Learning Style: {study_preferences.get('learningStyle', 'adaptive')}
+- Difficulty Preference: {study_preferences.get('difficultyPreference', 'medium')}
+
+LEARNING PROGRESS & PERFORMANCE:
+- Average Score: {performance_insights.get('averageScore', 'Building progress')}
+- Total Study Time: {performance_insights.get('studyTime', 'Getting started')}
+- Strong Subjects: {', '.join(performance_insights.get('strongSubjects', ['Exploring strengths']))}
+- Areas for Improvement: {', '.join(performance_insights.get('needsImprovement', ['Identifying growth areas']))}
+- Recent Achievements: {len(achievements)} milestones reached
+
+CURRENT ACADEMIC STATUS:
+- Active Lessons: {len(recent_lessons)} recent lessons  
+- Total Resources: {len(resources)} learning resources
+- Assessments: {len(assessments)} total, {len(incomplete_assessments)} incomplete
+- User Progress Entries: {len(user_progress)} progress records
+- Available Support Areas:
+{json.dumps(student_data.get('pending_tasks', []), indent=2)}
+
+DETAILED PROGRESS DATA:
+- Overall Progress: {json.dumps(progress, indent=2) if progress else 'Starting journey'}
+- Recent Lessons: {json.dumps(recent_lessons[:3], indent=2) if recent_lessons else 'No recent lessons'}
+- Learning Resources: {json.dumps([r.get('title', 'Untitled') for r in resources[:5]], indent=2) if resources else 'No resources yet'}
+
+PERSONALIZATION INSTRUCTIONS:
+1. **Adaptive Communication**: Adjust explanations based on {student_name}'s grade level and learning style. Use {study_preferences.get('learningStyle', 'visual')} learning approaches when possible.
+
+2. **Progress-Aware Support**: 
+   - Acknowledge their strengths in {', '.join(performance_insights.get('strongSubjects', ['their studies']))}
+   - Provide extra support for {', '.join(performance_insights.get('needsImprovement', ['areas they are working on']))}
+   - Reference their past achievements to build confidence
+
+3. **Contextual Assistance**:
+   - Help with incomplete assessments and current lessons
+   - Connect new concepts to their previous learning
+   - Suggest practice problems at their preferred difficulty level
+
+4. **Emotional Intelligence**:
+   - **Encouraging Tone**: Default supportive and motivating approach
+   - **Celebration Mode**: Enthusiastically celebrate successes and breakthroughs
+   - **Patient Support**: Extra patience and breaking down complex topics when they struggle
+   - **Confidence Building**: Remind them of past achievements when facing challenges
+
+5. **Learning Enhancement**:
+   - Use real-world examples relevant to their interests
+   - Provide step-by-step explanations for complex topics
+   - Offer multiple explanation approaches if they don't understand
+   - Ask follow-up questions to ensure comprehension
+
+6. **Tool Usage**: Use web_search to find current examples, visual aids, and supplementary materials that match their learning style and academic level.
+
+Remember: You're not just answering questions - you're {student_name}'s dedicated learning partner helping them succeed academically while building confidence and understanding."""
+
+                    await openai_ws.send_json({
+                        "type": "session.update",
+                        "session": {
+                            "modalities": ["audio", "text"],
+                            "instructions": prompt,
+                            "voice": "cedar",
+                            "turn_detection": {
+                                "type": "server_vad",
+                                "threshold": 0.5,
+                                "prefix_padding_ms": 300,
+                                "silence_duration_ms": 500,
+                            },
+                            "input_audio_transcription": {"model": "gpt-4o-transcribe"},
+                            "input_audio_noise_reduction": {"type": "near_field"},
+                            "tools": [
+                                {
+                                    "type": "function",
+                                    "name": "web_search",
+                                    "description": "Search the web for fresh information and examples.",
+                                    "parameters": {
+                                        "type": "object",
+                                        "properties": {"query": {"type": "string", "description": "provide latest information, real-time answers, and examples."}},
+                                        "required": ["query"]
+                                    }
+                                }
+                            ],
+                            "tool_choice": "auto",
+                            "include": ["item.input_audio_transcription.logprobs"],
+                        }
+                    })
+                    
+                    await websocket.send_json({
+                        "type": "session_started",
+                        "message": "Real-time voice session started"
+                    })
+                    
+                    # Start task to handle OpenAI responses
+                    response_task = asyncio.create_task(handle_openai_responses(openai_ws, websocket))
+                    
+                except Exception as e:
+                    logger.error(f"Failed to connect to OpenAI real-time API: {e}")
+                    await websocket.send_json({
+                        "type": "error",
+                        "message": f"Failed to start voice session: {str(e)}"
+                    })
+                    
+            elif data["type"] == "stop_session":
+                if response_task:
+                    response_task.cancel()
+                if openai_ws:
+                    await openai_ws.close()
+                if openai_session:
+                    await openai_session.close()
                 break
                 
+            elif data["type"] == "audio_chunk" and openai_ws:
+                # Forward audio chunks directly to OpenAI
+                try:
+                    await openai_ws.send_json({
+                        "type": "input_audio_buffer.append",
+                        "audio": data["audio"]
+                    })
+                except Exception as e:
+                    logger.error(f"Error forwarding audio to OpenAI: {e}")
+                    
+            elif data["type"] == "function_call_output" and openai_ws:
+                # Forward function call results back to OpenAI
+                try:
+                    await openai_ws.send_json({
+                        "type": "conversation.item.create",
+                        "item": {
+                            "type": "function_call_output",
+                            "call_id": data["call_id"],
+                            "output": data["output"]
+                        }
+                    })
+                except Exception as e:
+                    logger.error(f"Error sending function output to OpenAI: {e}")
+                    
     except WebSocketDisconnect:
-        logger.info("WebSocket disconnected")
+        logger.info("Client WebSocket disconnected")
     except Exception as e:
         logger.error(f"WebSocket error: {e}", exc_info=True)
         await websocket.send_json({
             "type": "error",
             "message": f"WebSocket error: {str(e)}"
         })
+    finally:
+        if openai_ws:
+            await openai_ws.close()
+        if openai_session:
+            await openai_session.close()
+
+async def handle_openai_responses(openai_ws, client_ws):
+    """Handle responses from OpenAI and forward to client."""
+    try:
+        async for msg in openai_ws:
+            if msg.type == aiohttp.WSMsgType.TEXT:
+                event = json.loads(msg.data)
+                event_type = event.get("type")
+                
+                # Log important events for debugging
+                if event_type in ["error", "response.error"]:
+                    logger.error(f"OpenAI error event: {json.dumps(event, indent=2)}")
+                elif event_type == "session.created":
+                    logger.info(f"OpenAI session created successfully")
+                
+                # Forward all relevant events to client
+                if event_type in [
+                    "session.created", 
+                    "response.audio.delta", 
+                    "response.audio.done",
+                    "conversation.item.create", 
+                    "conversation.item.input_audio_transcription.completed",
+                    "input_audio_buffer.speech_started",
+                    "input_audio_buffer.speech_stopped",
+                    "response.error", 
+                    "response.completed",
+                    "response.done",
+                    "session.terminated",
+                    "error"
+                ]:
+                    # For audio delta, ensure we pass the audio data properly
+                    if event_type == "response.audio.delta" and "delta" in event:
+                        # Forward the audio chunk with proper field name
+                        await client_ws.send_json({
+                            "type": "response.audio.delta",
+                            "audio": event["delta"],  # OpenAI sends audio in 'delta' field
+                            "response_id": event.get("response_id"),
+                            "item_id": event.get("item_id"),
+                            "output_index": event.get("output_index"),
+                            "content_index": event.get("content_index")
+                        })
+                        logger.debug(f"Forwarded audio delta: {len(event['delta'])} bytes")
+                    else:
+                        await client_ws.send_json(event)
+                    
+                # Handle function calls from OpenAI
+                if event_type == "response.function_call_arguments.done":
+                    # Process function call results
+                    logger.info(f"Function call completed: {event}")
+                    
+                # Handle tool calls requiring execution
+                if event_type == "response.output_item.added":
+                    item = event.get("item", {})
+                    if item.get("type") == "function_call" and item.get("name") == "web_search":
+                        # Execute web search server-side
+                        try:
+                            args = json.loads(item.get("arguments", "{}"))
+                            search_results = await perform_web_search(args.get("query", ""))
+                            
+                            # Send results back to OpenAI
+                            await openai_ws.send_json({
+                                "type": "conversation.item.create",
+                                "item": {
+                                    "type": "function_call_output",
+                                    "call_id": item.get("call_id"),
+                                    "output": search_results
+                                }
+                            })
+                        except Exception as e:
+                            logger.error(f"Error handling web search: {e}")
+                    
+            elif msg.type in (aiohttp.WSMsgType.CLOSED, aiohttp.WSMsgType.ERROR):
+                logger.warning("OpenAI WebSocket closed or errored")
+                await client_ws.send_json({"type": "error", "message": "OpenAI connection lost"})
+                break
+    except Exception as e:
+        logger.error(f"Error handling OpenAI responses: {e}", exc_info=True)
+        await client_ws.send_json({"type": "error", "message": str(e)})
 
 # ==============================================================================
 # 3. CHATBOT ENDPOINT (JSON-only, SSE text streaming)
@@ -458,7 +593,7 @@ class StudentData(BaseModel):
 
 class ChatbotRequest(BaseModel):
     session_id: str = Field(..., description="A unique identifier for the chat session. This maintains the context and knowledge base for the user.")
-    query: Optional[str] = Field(None, description="The user's text query to the chatbot.")
+    query: str = Field(..., description="The user's text query to the chatbot.")  # FIXED: Remove Optional, make required
     history: List[Dict[str, Any]] = Field([], description="A list of previous messages in the chat history.")
     web_search_enabled: bool = Field(True, description="Enable or disable web search functionality for the tutor.")  # Changed default to True
     student_data: Optional[StudentData] = Field(None, description="Comprehensive student data for personalized learning")
@@ -471,100 +606,110 @@ async def chatbot_endpoint(request: ChatbotRequest):
     Streaming text responses, no audio files.
     Enhanced with student data for personalized learning.
     """
-    session_id = request.session_id
-    
-    # Get or create a tutor instance for the session
-    if session_id not in tutor_sessions:
-        logger.info(f"Creating new AI Tutor session: {session_id}")
-        tutor_config = RAGTutorConfig.from_env()
-        tutor_config.web_search_enabled = True  # Always enable web search
-        tutor_sessions[session_id] = AsyncRAGTutor(storage_manager=storage_manager, config=tutor_config)
-    
-    tutor = tutor_sessions[session_id]
+    try:
+        logger.info(f"Chatbot endpoint called with session_id: {request.session_id}")
+        logger.info(f"Query: {request.query}")
+        logger.info(f"Student data: {request.student_data}")
+        
+        session_id = request.session_id
+        
+        # Get or create a tutor instance for the session
+        if session_id not in tutor_sessions:
+            logger.info(f"Creating new AI Tutor session: {session_id}")
+            tutor_config = RAGTutorConfig.from_env()
+            tutor_config.web_search_enabled = True  # Always enable web search
+            tutor_sessions[session_id] = AsyncRAGTutor(storage_manager=storage_manager, config=tutor_config)
+        
+        tutor = tutor_sessions[session_id]
 
-    # Always enable web search for the tutor
-    tutor.update_web_search_status(True)
+        # Always enable web search for the tutor
+        tutor.update_web_search_status(True)
 
-    # --- Enhanced Query Processing with Student Data ---
-    if not request.query:
-        raise HTTPException(status_code=400, detail="A 'query' is required.")
+        # --- Enhanced Query Processing with Student Data ---
+        if not request.query:
+            logger.error("No query provided in request")
+            raise HTTPException(status_code=400, detail="A 'query' is required.")
 
-    # Prepare enhanced context with student data
-    enhanced_query = request.query
-    enhanced_history = request.history.copy()
-    
-    if request.student_data:
-        student_data = request.student_data
+        # Prepare enhanced context with student data
+        enhanced_query = request.query
+        enhanced_history = request.history.copy()
         
-        # Create personalized context based on student data
-        personalization_context = f"""
-        Student Information:
-        - Name: {student_data.name}
-        - Grade: {student_data.grade}
-        - Email: {student_data.email}
+        if request.student_data:
+            student_data = request.student_data
+            
+            # Create personalized context based on student data
+            personalization_context = f"""
+            Student Information:
+            - Name: {student_data.name}
+            - Grade: {student_data.grade}
+            - Email: {student_data.email}
+            
+            Learning Progress:
+            - Completed Resources: {len([r for r in student_data.resources or [] if r.get('completed')])}
+            - Total Resources: {len(student_data.resources or [])}
+            - Achievements: {len(student_data.achievements or [])}
+            
+            Current Learning Focus:
+            - Active Lessons: {len([l for l in student_data.lessons or [] if l.get('status') == 'active'])}
+            - Recent Assessments: {len([a for a in student_data.assessments or [] if a.get('recent')])}
+            
+            Learning Statistics:
+            - Study Time: {student_data.learning_stats.get('totalStudyTime', 'N/A') if student_data.learning_stats else 'N/A'}
+            - Completion Rate: {student_data.learning_stats.get('completionRate', 'N/A') if student_data.learning_stats else 'N/A'}
+            - Performance Score: {student_data.learning_stats.get('averageScore', 'N/A') if student_data.learning_stats else 'N/A'}
+            """
+            
+            # Add personalization context to the query
+            enhanced_query = f"""
+            {personalization_context}
+            
+            Student Query: {request.query}
+            
+            Consider their grade level ({student_data.grade}) and adapt your explanations accordingly.
+            """
+            
+            logger.info(f"Enhanced query with student data for {student_data.name} (Grade {student_data.grade})")
         
-        Learning Progress:
-        - Completed Resources: {len([r for r in student_data.resources or [] if r.get('completed')])}
-        - Total Resources: {len(student_data.resources or [])}
-        - Achievements: {len(student_data.achievements or [])}
+        is_kb_ready = tutor.ensemble_retriever is not None
         
-        Current Learning Focus:
-        - Active Lessons: {len([l for l in student_data.lessons or [] if l.get('status') == 'active'])}
-        - Recent Assessments: {len([a for a in student_data.assessments or [] if a.get('recent')])}
-        
-        Learning Statistics:
-        - Study Time: {student_data.learning_stats.get('totalStudyTime', 'N/A') if student_data.learning_stats else 'N/A'}
-        - Completion Rate: {student_data.learning_stats.get('completionRate', 'N/A') if student_data.learning_stats else 'N/A'}
-        - Performance Score: {student_data.learning_stats.get('averageScore', 'N/A') if student_data.learning_stats else 'N/A'}
-        """
-        
-        # Add personalization context to the query
-        enhanced_query = f"""
-        {personalization_context}
-        
-        Student Query: {request.query}
-        
-        Consider their grade level ({student_data.grade}) and adapt your explanations accordingly.
-        """
-        
-        logger.info(f"Enhanced query with student data for {student_data.name} (Grade {student_data.grade})")
-    
-    is_kb_ready = tutor.ensemble_retriever is not None
-    
-    # FIXED: Pass all parameters including uploaded_files to match Student_AI_tutor.py run_agent_async signature
-    response_generator = tutor.run_agent_async(
-        query=enhanced_query,
-        history=enhanced_history,
-        image_storage_key=None,  # No image upload in this flow
-        is_knowledge_base_ready=is_kb_ready,
-        uploaded_files=request.uploaded_files,
-        student_details=request.student_data.model_dump() if request.student_data else None
-    )
+        # FIXED: Pass all parameters including uploaded_files to match Student_AI_tutor.py run_agent_async signature
+        response_generator = tutor.run_agent_async(
+            query=enhanced_query,
+            history=enhanced_history,
+            image_storage_key=None,  # No image upload in this flow
+            is_knowledge_base_ready=is_kb_ready,
+            uploaded_files=request.uploaded_files,
+            student_details=request.student_data.model_dump() if request.student_data else None
+        )
 
-    async def event_stream():
-        import json
-        async def send(obj: dict):
-            yield f"data: {json.dumps(obj)}\n\n"
-        try:
-            async for chunk in response_generator:
-                if not chunk:
-                    continue
-                async for part in send({"type": "text_chunk", "content": chunk}):
+        async def event_stream():
+            import json
+            async def send(obj: dict):
+                yield f"data: {json.dumps(obj)}\n\n"
+            try:
+                async for chunk in response_generator:
+                    if not chunk:
+                        continue
+                    async for part in send({"type": "text_chunk", "content": chunk}):
+                        yield part
+                async for part in send({"type": "done"}):
                     yield part
-            async for part in send({"type": "done"}):
-                yield part
-        except Exception as e:
-            logger.error(f"Error in chatbot stream: {e}", exc_info=True)
-            async for part in send({"type": "error", "message": str(e)}):
-                yield part
+            except Exception as e:
+                logger.error(f"Error in chatbot stream: {e}", exc_info=True)
+                async for part in send({"type": "error", "message": str(e)}):
+                    yield part
 
-    headers = {
-        "Cache-Control": "no-cache",
-        "Connection": "keep-alive",
-        "Content-Type": "text/event-stream",
-        "X-Accel-Buffering": "no",
-    }
-    return StreamingResponse(event_stream(), headers=headers, media_type="text/event-stream")
+        headers = {
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "Content-Type": "text/event-stream",
+            "X-Accel-Buffering": "no",
+        }
+        return StreamingResponse(event_stream(), headers=headers, media_type="text/event-stream")
+
+    except Exception as e:
+        logger.error(f"Error in chatbot endpoint: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 # NEW: Document upload endpoint for chatbot
 @app.post("/upload_documents_endpoint")
@@ -1007,6 +1152,473 @@ async def voice_response_endpoint(schema: VoiceResponseSchema):
     except Exception as e:
         logger.error(f"Error in voice response endpoint: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+# NEW: TEACHER BULK DATA ENDPOINT
+
+class TeacherBulkDataSchema(BaseModel):
+    teacher_name: str = Field(..., description="Teacher's name")
+    student_details_with_reports: List[Dict[str, Any]] = Field(..., description="Bulk student data with reports")
+    generated_content_details: List[Dict[str, Any]] = Field(..., description="Generated content details")
+    feedback_data: List[Dict[str, Any]] = Field([], description="Student feedback data")
+    learning_analytics: Optional[Dict[str, Any]] = Field({}, description="Learning analytics data")
+
+@app.post("/teacher_bulk_data_endpoint")
+async def teacher_bulk_data_endpoint(schema: TeacherBulkDataSchema):
+    """
+    Endpoint for teachers to submit bulk student data, feedback, and content details.
+    This data is used to personalize the AI teacher assistant.
+    """
+    try:
+        logger.info(f"Received bulk data from teacher: {schema.teacher_name}")
+        logger.info(f"Student count: {len(schema.student_details_with_reports)}")
+        logger.info(f"Content count: {len(schema.generated_content_details)}")
+        logger.info(f"Feedback count: {len(schema.feedback_data)}")
+        
+        # Store the teacher data in memory for the voice session
+        # In production, you'd want to use Redis or a database
+        teacher_sessions[schema.teacher_name] = {
+            "student_details_with_reports": schema.student_details_with_reports,
+            "generated_content_details": schema.generated_content_details,
+            "feedback_data": schema.feedback_data,
+            "learning_analytics": schema.learning_analytics,
+            "timestamp": datetime.now().isoformat()
+        }
+        
+        return {
+            "success": True,
+            "message": f"Successfully received data for {len(schema.student_details_with_reports)} students",
+            "teacher_name": schema.teacher_name,
+            "data_summary": {
+                "students": len(schema.student_details_with_reports),
+                "content": len(schema.generated_content_details),
+                "feedback": len(schema.feedback_data)
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Error in teacher bulk data endpoint: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+# NEW: TEACHER VOICE CHAT ENDPOINT
+
+class TeacherVoiceChatSchema(BaseModel):
+    session_id: str = Field(..., description="Session identifier")
+    teacher_data: TeacherBulkDataSchema
+
+@app.post("/teacher_voice_chat_endpoint")
+async def teacher_voice_chat_endpoint(schema: TeacherVoiceChatSchema):
+    """
+    Real-time text chat for teachers with streaming responses.
+    """
+    async def event_stream():
+        import json
+        
+        async def send(obj: dict):
+            yield f"data: {json.dumps(obj)}\n\n"
+
+        try:
+            # Get comprehensive teacher data from the schema
+            teacher_data = schema.teacher_data.model_dump()
+            teacher_name = teacher_data.get('teacher_name', 'Teacher')
+            teacher_id = teacher_data.get('teacher_id', 'Unknown')
+            
+            # Extract all the data
+            student_reports = teacher_data.get('student_details_with_reports', [])
+            student_performance = teacher_data.get('student_performance', {})
+            student_overview = teacher_data.get('student_overview', {})
+            top_performers = teacher_data.get('top_performers', [])
+            subject_performance = teacher_data.get('subject_performance', [])
+            behavior_analysis = teacher_data.get('behavior_analysis', {})
+            attendance_data = teacher_data.get('attendance_data', {})
+            
+            generated_content = teacher_data.get('generated_content_details', [])
+            assessment_details = teacher_data.get('assessment_details', [])
+            
+            media_toolkit = teacher_data.get('media_toolkit', {})
+            media_counts = teacher_data.get('media_counts', {})
+            
+            progress_data = teacher_data.get('progress_data', {})
+            feedback_data = teacher_data.get('feedback_data', [])
+            learning_analytics = teacher_data.get('learning_analytics', {})
+            
+            # Create comprehensive AI prompt for teacher assistance
+            prompt = f"""You are {teacher_name}'s personalized AI teaching assistant. Analyze their comprehensive teaching environment and provide actionable insights.
+
+TEACHER PROFILE:
+- Name: {teacher_name}
+- ID: {teacher_id}
+
+STUDENT DATA:
+- Total Students: {len(student_reports)} students
+- Performance Overview: {json.dumps(student_overview, indent=2) if student_overview else 'No overview data'}
+- Top Performers: {json.dumps(top_performers, indent=2) if top_performers else 'No top performers data'}
+- Subject Performance: {json.dumps(subject_performance, indent=2) if subject_performance else 'No subject data'}
+- Behavior Analysis: {json.dumps(behavior_analysis, indent=2) if behavior_analysis else 'No behavior data'}
+- Attendance: {json.dumps(attendance_data, indent=2) if attendance_data else 'No attendance data'}
+
+TEACHING CONTENT:
+- Generated Content: {len(generated_content)} items
+- Assessments: {len(assessment_details)} assessments
+- Content Details: {json.dumps([c.get('title', 'Untitled') for c in generated_content[:5]], indent=2) if generated_content else 'No content'}
+
+MEDIA TOOLKIT:
+- Comics: {media_counts.get('comics', 0)} items
+- Images: {media_counts.get('images', 0)} items  
+- Slides: {media_counts.get('slides', 0)} items
+- Videos: {media_counts.get('video', 0)} items
+- Web Search: {media_counts.get('webSearch', 0)} items
+
+PROGRESS & FEEDBACK:
+- Progress Data: {json.dumps(progress_data, indent=2) if progress_data else 'No progress data'}
+- Feedback Entries: {len(feedback_data)} feedback items
+- Learning Analytics: {json.dumps(learning_analytics, indent=2) if learning_analytics else 'No analytics'}
+
+Please provide a comprehensive analysis of:
+1. **Student Performance Patterns**: Identify trends, strengths, and areas needing improvement
+2. **Teaching Effectiveness**: Analyze your content generation and assessment strategies
+3. **Media Utilization**: How effectively you're using the media toolkit for teaching
+4. **Student Engagement**: Based on feedback and progress data
+5. **Professional Development**: Areas where you can enhance your teaching practice
+6. **Actionable Recommendations**: Specific steps to improve student outcomes
+
+Be professional, data-driven, and supportive. Focus on practical insights that can immediately improve teaching effectiveness."""
+
+            # Use AI_tutor to generate response
+            from AI_tutor import AsyncRAGTutor, RAGTutorConfig
+            
+            tutor_config = RAGTutorConfig.from_env()
+            tutor_config.web_search_enabled = True
+            
+            if schema.session_id not in teacher_tutor_sessions:
+                teacher_tutor_sessions[schema.session_id] = AsyncRAGTutor(storage_manager=storage_manager, config=tutor_config)
+            
+            tutor = teacher_tutor_sessions[schema.session_id]
+            tutor.update_web_search_status(True)
+            
+            # Generate streaming response
+            response_generator = tutor.run_agent_async(
+                query=prompt,
+                history=[],
+                image_storage_key=None,
+                is_knowledge_base_ready=(tutor.ensemble_retriever is not None),
+                uploaded_files=[],
+                teaching_data=teacher_data
+            )
+            
+            async for chunk in response_generator:
+                if chunk and chunk.strip():
+                    async for part in send({"type": "text_chunk", "content": chunk}):
+                        yield part
+            
+            async for part in send({"type": "done"}):
+                yield part
+
+        except Exception as e:
+            logger.error(f"Error in teacher voice chat: {e}", exc_info=True)
+            async for part in send({"type": "error", "message": str(e)}):
+                yield part
+
+    headers = {
+        "Cache-Control": "no-cache",
+        "Connection": "keep-alive", 
+        "Content-Type": "text/event-stream",
+        "X-Accel-Buffering": "no",
+    }
+    return StreamingResponse(event_stream(), headers=headers, media_type="text/event-stream")
+
+# NEW: TEACHER VOICE WEBSOCKET ENDPOINT
+
+@app.websocket("/ws/teacher-voice")
+async def websocket_teacher_voice_endpoint(websocket: WebSocket):
+    """Real-time voice conversation for teachers using OpenAI's real-time API."""
+    await websocket.accept()
+    
+    # Store teacher data and session info
+    teacher_data = None
+    openai_ws = None
+    openai_session = None
+    response_task = None
+    
+    try:
+        while True:
+            data = await websocket.receive_json()
+            
+            if data["type"] == "start_session":
+                # Initialize real-time voice session with teacher data
+                teacher_data = data.get("teacher_data", {})
+                logger.info(f"Received teacher data keys: {list(teacher_data.keys())}")
+                logger.info(f"Teacher data sample: {dict(list(teacher_data.items())[:5])}")
+                
+                # Connect to OpenAI's real-time API
+                openai_api_key = os.getenv("OPENAI_API_KEY")
+                
+                if not openai_api_key:
+                    await websocket.send_json({
+                        "type": "error",
+                        "message": "OpenAI API key not configured"
+                    })
+                    continue
+                
+                # Create connection to OpenAI real-time API
+                openai_url = "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01"
+                openai_headers = {
+                    "Authorization": f"Bearer {openai_api_key}",
+                    "OpenAI-Beta": "realtime=v1"
+                }
+                
+                try:
+                    # Connect to OpenAI real-time API
+                    openai_session = aiohttp.ClientSession()
+                    openai_ws = await openai_session.ws_connect(
+                        openai_url,
+                        headers=openai_headers,
+                        max_msg_size=10_000_000
+                    )
+                    
+                    # Send session configuration to OpenAI
+                    teacher_name = teacher_data.get('teacher_name', 'Teacher')
+                    student_reports = teacher_data.get('student_details_with_reports', [])
+                    generated_content = teacher_data.get('generated_content_details', [])
+                    
+                    # Create comprehensive teacher prompt
+                    prompt = f"""You are {teacher_name}'s personalized AI teaching assistant. You have comprehensive knowledge about their students and teaching materials.
+
+TEACHER PROFILE:
+- Name: {teacher_name}
+- Students: {len(student_reports)} students with detailed reports
+- Available Content: {len(generated_content)} teaching materials
+
+STUDENT PERFORMANCE DATA:
+{json.dumps(student_reports, indent=2) if student_reports else 'No student data available'}
+
+TEACHING MATERIALS:
+{json.dumps(generated_content, indent=2) if generated_content else 'No content data available'}
+
+Your role is to act as a collaborative partner for {teacher_name}. Help them:
+1. **Analyze Student Performance**: Identify patterns, strengths, and areas needing improvement
+2. **Teaching Strategy Support**: Suggest pedagogical approaches based on student data  
+3. **Content Enhancement**: Help improve lesson plans and teaching materials
+4. **Professional Development**: Offer insights for teaching effectiveness
+
+INTERACTION GUIDELINES:
+- **Professional Tone**: Maintain respectful, educational expertise
+- **Data-Driven Insights**: Base recommendations on the provided student reports
+- **Collaborative Approach**: Ask clarifying questions and engage in teaching discussions
+- **Supportive Communication**: Be encouraging about teaching challenges
+- **Tool Usage**: Use web_search to find educational research and teaching resources
+
+Remember: You're supporting {teacher_name}'s teaching practice with personalized insights based on their actual student data."""
+
+                    await openai_ws.send_json({
+                        "type": "session.update",
+                        "session": {
+                            "modalities": ["audio", "text"],
+                            "instructions": prompt,
+                            "voice": "cedar",
+                            "turn_detection": {
+                                "type": "server_vad",
+                                "threshold": 0.5,
+                                "prefix_padding_ms": 300,
+                                "silence_duration_ms": 500,
+                            },
+                            "input_audio_transcription": {"model": "gpt-4o-transcribe"},
+                            "input_audio_noise_reduction": {"type": "near_field"},
+                            "tools": [
+                                {
+                                    "type": "function",
+                                    "name": "web_search",
+                                    "description": "Search for educational research and teaching strategies.",
+                                    "parameters": {
+                                        "type": "object",
+                                        "properties": {"query": {"type": "string", "description": "Educational search query for teaching resources"}},
+                                        "required": ["query"]
+                                    }
+                                }
+                            ],
+                            "tool_choice": "auto",
+                            "include": ["item.input_audio_transcription.logprobs"],
+                        }
+                    })
+                    
+                    await websocket.send_json({
+                        "type": "session_started",
+                        "message": "Real-time teacher voice session started"
+                    })
+                    
+                    # Start task to handle OpenAI responses
+                    response_task = asyncio.create_task(handle_teacher_openai_responses(openai_ws, websocket))
+                    
+                except Exception as e:
+                    logger.error(f"Failed to connect to OpenAI real-time API: {e}")
+                    await websocket.send_json({
+                        "type": "error",
+                        "message": f"Failed to start voice session: {str(e)}"
+                    })
+                    
+            elif data["type"] == "stop_session":
+                if response_task:
+                    response_task.cancel()
+                if openai_ws:
+                    await openai_ws.close()
+                if openai_session:
+                    await openai_session.close()
+                break
+                
+            elif data["type"] == "audio_chunk" and openai_ws:
+                # Forward audio chunks directly to OpenAI
+                try:
+                    await openai_ws.send_json({
+                        "type": "input_audio_buffer.append",
+                        "audio": data["audio"]
+                    })
+                except Exception as e:
+                    logger.error(f"Error forwarding teacher audio to OpenAI: {e}")
+                    
+            elif data["type"] == "function_call_output" and openai_ws:
+                # Forward function call results back to OpenAI
+                try:
+                    await openai_ws.send_json({
+                        "type": "conversation.item.create",
+                        "item": {
+                            "type": "function_call_output",
+                            "call_id": data["call_id"],
+                            "output": data["output"]
+                        }
+                    })
+                except Exception as e:
+                    logger.error(f"Error sending teacher function output to OpenAI: {e}")
+                    
+    except WebSocketDisconnect:
+        logger.info("Teacher WebSocket disconnected")
+    except Exception as e:
+        logger.error(f"Teacher WebSocket error: {e}", exc_info=True)
+        await websocket.send_json({
+            "type": "error",
+            "message": f"WebSocket error: {str(e)}"
+        })
+    finally:
+        if openai_ws:
+            await openai_ws.close()
+        if openai_session:
+            await openai_session.close()
+
+async def handle_teacher_openai_responses(openai_ws, client_ws):
+    """Handle responses from OpenAI for teacher and forward to client."""
+    try:
+        async for msg in openai_ws:
+            if msg.type == aiohttp.WSMsgType.TEXT:
+                event = json.loads(msg.data)
+                event_type = event.get("type")
+                
+                # Log important events for debugging
+                if event_type in ["error", "response.error"]:
+                    logger.error(f"OpenAI teacher error event: {json.dumps(event, indent=2)}")
+                elif event_type == "session.created":
+                    logger.info(f"OpenAI teacher session created successfully")
+                
+                # Forward all relevant events to client
+                if event_type in [
+                    "session.created", 
+                    "response.audio.delta", 
+                    "response.audio.done",
+                    "conversation.item.create", 
+                    "conversation.item.input_audio_transcription.completed",
+                    "input_audio_buffer.speech_started",
+                    "input_audio_buffer.speech_stopped",
+                    "response.error", 
+                    "response.completed",
+                    "response.done",
+                    "session.terminated",
+                    "error"
+                ]:
+                    # For audio delta, ensure we pass the audio data properly
+                    if event_type == "response.audio.delta" and "delta" in event:
+                        # Forward the audio chunk with proper field name
+                        await client_ws.send_json({
+                            "type": "response.audio.delta",
+                            "audio": event["delta"],  # OpenAI sends audio in 'delta' field
+                            "response_id": event.get("response_id"),
+                            "item_id": event.get("item_id"),
+                            "output_index": event.get("output_index"),
+                            "content_index": event.get("content_index")
+                        })
+                        logger.debug(f"Forwarded teacher audio delta: {len(event['delta'])} bytes")
+                    else:
+                        await client_ws.send_json(event)
+                    
+                # Handle function calls from OpenAI
+                if event_type == "response.function_call_arguments.done":
+                    # Process function call results
+                    logger.info(f"Teacher function call completed: {event}")
+                    
+                # Handle tool calls requiring execution
+                if event_type == "response.output_item.added":
+                    item = event.get("item", {})
+                    if item.get("type") == "function_call" and item.get("name") == "web_search":
+                        # Execute web search server-side for teacher
+                        try:
+                            args = json.loads(item.get("arguments", "{}"))
+                            search_results = await perform_web_search(args.get("query", ""))
+                            
+                            # Send results back to OpenAI
+                            await openai_ws.send_json({
+                                "type": "conversation.item.create",
+                                "item": {
+                                    "type": "function_call_output",
+                                    "call_id": item.get("call_id"),
+                                    "output": search_results
+                                }
+                            })
+                        except Exception as e:
+                            logger.error(f"Error handling teacher web search: {e}")
+                    
+            elif msg.type in (aiohttp.WSMsgType.CLOSED, aiohttp.WSMsgType.ERROR):
+                logger.warning("Teacher OpenAI WebSocket closed or errored")
+                await client_ws.send_json({"type": "error", "message": "OpenAI connection lost"})
+                break
+    except Exception as e:
+        logger.error(f"Error handling teacher OpenAI responses: {e}", exc_info=True)
+        await client_ws.send_json({"type": "error", "message": str(e)})
+
+# Add teacher tutor sessions
+teacher_tutor_sessions: Dict[str, Any] = {}
+
+# Add teacher voice agent endpoint
+@app.post("/teacher_tutor_endpoint")
+async def teacher_tutor_endpoint(request: ChatbotRequest):
+    """
+    Teacher-specific chatbot endpoint.
+    """
+    try:
+        logger.info(f"Teacher tutor endpoint called with session_id: {request.session_id}")
+        
+        session_id = request.session_id
+        
+        # For now, just return a basic response since AsyncTeacherTutor isn't implemented yet
+        async def event_stream():
+            import json
+            async def send(obj: dict):
+                yield f"data: {json.dumps(obj)}\n\n"
+            
+            try:
+                await send({"type": "text_chunk", "content": "Teacher tutor endpoint is working. AsyncTeacherTutor implementation pending."})
+                await send({"type": "done"})
+                    
+            except Exception as e:
+                logger.error(f"Error in teacher tutor stream: {e}", exc_info=True)
+                await send({"type": "error", "message": str(e)})
+
+        headers = {
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "Content-Type": "text/event-stream",
+            "X-Accel-Buffering": "no",
+        }
+        return StreamingResponse(event_stream(), headers=headers, media_type="text/event-stream")
+
+    except Exception as e:
+        logger.error(f"Error in teacher tutor endpoint: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 # --- Uvicorn Server Runner ---
 if __name__ == "__main__":

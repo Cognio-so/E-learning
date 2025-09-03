@@ -12,7 +12,7 @@ load_dotenv()
 
 API_KEY = os.getenv("OPENAI_API_KEY")
 TAVILY_API_KEY = os.getenv("TAVILY_API_KEY")
-MODEL = "gpt-realtime"  # Correct model name
+MODEL = "gpt-4o-realtime-preview-2024-10-01"  # Correct model name for real-time API
 SAMPLE_RATE = 24000
 CHUNK_MS = 20
 CHUNK = int(SAMPLE_RATE * CHUNK_MS / 1000)
@@ -67,7 +67,7 @@ async def send_audio(ws, student_details):
     """Sends audio from the queue to the OpenAI WebSocket."""
     
     # Dynamically create the prompt with student details
-    prompt = f"""You are a friendly and encouraging AI study buddy for {student_details['name']}, a student in {student_details['class']} studying {student_details['subjects']}. Your primary goal is to help them learn, feel supported, and complete their pending assignments.
+    prompt = f"""You are a friendly and encouraging AI study buddy for {student_details['name']}, a student in grade {student_details['grade']} studying {', '.join(student_details['subjects'])}. Your primary goal is to help them learn, feel supported, and complete their pending assignments.
 
 Here are the student's pending tasks:
 {json.dumps(student_details['pending_tasks'], indent=2)}
@@ -80,7 +80,7 @@ Core Instructions:
 2. Analyze and Adapt: Before responding, analyze the student's query and the outcome of any task. Your tone must dynamically change based on the following emotional layers:
     - Friendly Tone (Default for Explanations):
         * When: The student asks a question, requests an explanation, or you are providing general information.
-        * How: Be warm, approachable, and encouraging. Use phrases like, "That's a great question,!", "Let's break it down," "Think of it like this," or "I'm happy to help with that!"
+        * How: Be warm, approachable, and encouraging. Use phrases like, "That's a great question!", "Let's break it down," "Think of it like this," or "I'm happy to help with that!"
     - Reassuring Tone (On Failure or Error):
         * When: The student's answer is incorrect, you cannot fulfill a request, or an error occurs.
         * How: Be gentle, supportive, and focus on the learning opportunity. Never be discouraging. Use phrases like, "No worries, that's a common mistake!", "That was a good try! We're very close," "It seems I had a little trouble with that request, let's try it another way," or "Don't worry if it's not perfect yet, learning is a process."
@@ -159,32 +159,47 @@ async def main():
     output_stream = None
     global assistant_speaking
     
-    # --- START OF MODIFIED SECTION ---
-    # Get student details from terminal input
-    name = input("Enter student's name: ")
-    class_name = input("Enter student's class: ")
-    subjects_input = input("Enter subjects (comma-separated): ")
-    subjects = [subject.strip() for subject in subjects_input.split(',')]
-    # pending_tasks_json = input("Enter pending tasks in JSON format: ")
-
-    # try:
-    #     pending_tasks = json.loads(pending_tasks_json)
-    # except json.JSONDecodeError:
-    #     print("Invalid JSON format for pending tasks. Please try again.")
-    #     return
+    # Get student details from command line arguments or environment
+    import sys
+    if len(sys.argv) > 3:
+        name = sys.argv[1]
+        grade = sys.argv[2]  # FIXED: Changed from class_name to grade
+        subjects_input = sys.argv[3]
+        subjects = [subject.strip() for subject in subjects_input.split(',')]
+        
+        # Get pending tasks from command line or use default
+        if len(sys.argv) > 4:
+            try:
+                pending_tasks = json.loads(sys.argv[4])
+            except json.JSONDecodeError:
+                pending_tasks = [
+                    {"topic": "General Studies", "status": "Not Started"}
+                ]
+        else:
+            pending_tasks = [
+                {"topic": "General Studies", "status": "Not Started"}
+            ]
+    else:
+        # Fallback to environment variables or defaults
+        name = os.getenv("STUDENT_NAME", "Student")
+        grade = os.getenv("STUDENT_GRADE", "8")  # FIXED: Changed from STUDENT_CLASS to STUDENT_GRADE
+        subjects_input = os.getenv("STUDENT_SUBJECTS", "Mathematics, Science")
+        subjects = [subject.strip() for subject in subjects_input.split(',')]
+        pending_tasks = [
+            {"topic": "General Studies", "status": "Not Started"}
+        ]
 
     student_details = {
         "name": name,
-        "class": class_name,
+        "grade": grade,  # FIXED: Changed from class to grade
         "subjects": subjects,
-        "pending_tasks": [
-            {"topic": "Newton's Laws of Motion", "status": "Not Started"},
-            {"topic": "Work, Energy, and Power", "status": "In Progress"},
-            {"topic": "Circular Motion", "status": "Not Started"}
-        ]
+        "pending_tasks": pending_tasks
     }
+    
     print(f"\nStarting study session for {student_details['name']}...")
-    # --- END OF MODIFIED SECTION ---
+    print(f"Grade: {student_details['grade']}")  # FIXED: Changed from Class to Grade
+    print(f"Subjects: {', '.join(student_details['subjects'])}")
+    print(f"Pending Tasks: {len(student_details['pending_tasks'])} tasks")
 
     try:
         async with aiohttp.ClientSession() as session:
@@ -216,8 +231,14 @@ async def main():
                             print("Start speaking")
 
                         elif event.get("type") == "response.audio.delta":
-                            pcm = base64.b64decode(event["delta"])
-                            output_stream.write(np.frombuffer(pcm, dtype=np.int16))
+                            try:
+                                pcm = base64.b64decode(event["delta"])
+                                audio_data = np.frombuffer(pcm, dtype=np.int16)
+                                if len(audio_data) > 0:
+                                    output_stream.write(audio_data)
+                            except Exception as e:
+                                print(f"Error playing audio delta: {e}")
+                                continue
                             
                         elif event.get("type") == "conversation.item.create":
                             if event.get("tool_calls"):

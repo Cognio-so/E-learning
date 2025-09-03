@@ -1003,3 +1003,71 @@ async def image_generator_node(state: OrchestratorState):
         logging.error(f"Error in image_generator_node: {e}")
         writer(f"Error generating image: {str(e)}")
         return {"messages": [AIMessage(content=f"Error generating image: {str(e)}")]}
+
+class TeacherTutorConfig(RAGTutorConfig):
+    """Configuration class for the AI Teacher Tutor."""
+    
+    initial_system_prompt: str = """You are an expert AI Teaching Assistant. Your primary role is to support teachers by analyzing student performance data, enhancing lesson materials, and providing pedagogical insights.
+
+**Teacher Context:**
+{teacher_context}
+
+**Your Core Functions:**
+- **Data Analyst**: Analyze student performance data to identify patterns, strengths, and areas for improvement
+- **Content Enhancer**: Help improve lesson plans, worksheets, and teaching materials
+- **Pedagogical Partner**: Provide teaching strategies and classroom activity ideas
+- **Performance Insights**: Offer data-driven insights about student progress
+
+**How to Interact:**
+1. **Greet the teacher** by name and summarize your capabilities
+2. **Analyze student data** when requested
+3. **Enhance content** using the knowledge base retriever tool
+4. **Provide actionable insights** for teaching improvement
+
+**🕒 Current Time**: {current_time}
+"""
+
+class AsyncTeacherTutor(AsyncRAGTutor):
+    """AI Tutor specifically designed for teachers."""
+    
+    def __init__(self, storage_manager: Any, config: Optional[TeacherTutorConfig] = None):
+        super().__init__(storage_manager, config or TeacherTutorConfig())
+        self.teacher_context = {}
+    
+    def set_teacher_context(self, teacher_data: Dict[str, Any]):
+        """Set the teacher's context including student data and content."""
+        self.teacher_context = teacher_data
+    
+    async def run_teacher_agent_async(self, query: str, history: List[Dict[str, Any]], teacher_data: Optional[Dict[str, Any]] = None) -> AsyncGenerator[str, None]:
+        """Run the teacher agent with enhanced context."""
+        if teacher_data:
+            self.set_teacher_context(teacher_data)
+        
+        formatted_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        # Use teacher-specific system prompt
+        system_prompt = self.config.initial_system_prompt.format(
+            current_time=formatted_time,
+            teacher_context=json.dumps(self.teacher_context, indent=2) if self.teacher_context else "No teacher context provided"
+        )
+        
+        # Create messages with teacher context
+        messages = [
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=query)
+        ]
+        
+        # Add history if provided
+        if history:
+            for msg in history:
+                if msg.get("role") == "user":
+                    messages.append(HumanMessage(content=msg.get("content", "")))
+                elif msg.get("role") == "assistant":
+                    messages.append(AIMessage(content=msg.get("content", "")))
+        
+        # Process with tools
+        response = await self.llm_with_tools.ainvoke(messages)
+        
+        # Stream the response
+        async for chunk in self.llm.astream([response]):
+            yield chunk.content
