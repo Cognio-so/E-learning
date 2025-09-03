@@ -41,12 +41,6 @@ from media_toolkit.slides_generation import SlideSpeakGenerator
 from media_toolkit.image_generation_model import ImageGenerator
 from media_toolkit.comics_generation import create_comical_story_prompt, generate_comic_image
 
-# Voice functionality imports
-from AI_voice_functionality import (
-    transcribe_audio, 
-    get_comprehensive_answer_stream, 
-    AI_STUDY_BUDDY_PROMPT
-)
 
 # Import Tavily for web search in voice
 try:
@@ -129,44 +123,8 @@ async def health_check():
 # 2. VOICE FUNCTIONALITY ENDPOINTS
 # ==============================
 
-class VoiceTranscriptionSchema(BaseModel):
-    """Schema for voice transcription requests."""
-    pass
 
-class VoiceChatSchema(BaseModel):
-    """Schema for voice chat requests."""
-    text: str = Field(..., description="User's text input")
-    web_search_enabled: bool = Field(False, description="Whether to enable web search")
 
-@app.post("/voice_transcription_endpoint")
-async def voice_transcription_endpoint(audio_file: UploadFile = File(...)):
-    """Transcribe audio to text using OpenAI's Whisper model."""
-    try:
-        logger.info(f"Processing voice transcription for file: {audio_file.filename}")
-        
-        import io
-        audio_bytes = await audio_file.read()
-        audio_io = io.BytesIO(audio_bytes)
-        audio_io.name = audio_file.filename
-        
-        transcription = await run_in_threadpool(transcribe_audio, audio_io)
-        
-        if transcription:
-            return {
-                "success": True,
-                "transcription": transcription,
-                "message": "Audio transcribed successfully"
-            }
-        else:
-            raise HTTPException(status_code=400, detail="Failed to transcribe audio")
-            
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error in voice transcription endpoint: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
-
-# Add this new endpoint for real-time voice interaction
 @app.post("/voice_realtime_endpoint")
 async def voice_realtime_endpoint():
     """
@@ -176,12 +134,7 @@ async def voice_realtime_endpoint():
     async def event_stream():
         import json
         import asyncio
-        from AI_voice_functionality import (
-            transcribe_audio, 
-            get_comprehensive_answer_stream,
-            text_to_speech,
-            AI_STUDY_BUDDY_PROMPT
-        )
+        
         
         async def send(obj: dict):
             yield f"data: {json.dumps(obj)}\n\n"
@@ -206,63 +159,6 @@ async def voice_realtime_endpoint():
     return StreamingResponse(event_stream(), headers=headers, media_type="text/event-stream")
 
 # Update the voice chat endpoint to use real-time processing
-@app.post("/voice_chat_endpoint")
-async def voice_chat_endpoint(schema: VoiceChatSchema):
-    """
-    Real-time voice chat using the actual voice functionality.
-    """
-    async def event_stream():
-        import json
-        from AI_voice_functionality import get_comprehensive_answer_stream
-        
-        async def send(obj: dict):
-            yield f"data: {json.dumps(obj)}\n\n"
-
-        try:
-            full_response = ""
-            
-            # Use the real voice functionality for streaming responses
-            for chunk in get_comprehensive_answer_stream(schema.text):
-                if not chunk:
-                    continue
-                full_response += chunk
-                # Stream text in real-time
-                async for part in send({"type": "text_chunk", "content": chunk}):
-                    yield part
-
-            async for part in send({"type": "done"}):
-                yield part
-
-        except Exception as e:
-            logger.error(f"Error in real-time voice chat: {e}", exc_info=True)
-            async for part in send({"type": "error", "message": str(e)}):
-                yield part
-
-    headers = {
-        "Cache-Control": "no-cache",
-        "Connection": "keep-alive",
-        "Content-Type": "text/event-stream",
-        "X-Accel-Buffering": "no",
-    }
-    return StreamingResponse(event_stream(), headers=headers, media_type="text/event-stream")
-
-# Helper function for web search
-async def perform_web_search(query: str) -> str:
-    """Perform a web search using Tavily."""
-    try:
-        if tavily_client:
-            response = await run_in_threadpool(
-                tavily_client.search, 
-                query=query, 
-                search_depth="advanced", 
-                max_results=3
-            )
-            return json.dumps(response.get("results", []))
-        else:
-            return json.dumps([{"error": "Web search not available"}])
-    except Exception as e:
-        logger.error(f"Web search error: {e}")
-        return json.dumps([{"error": str(e)}])
 
 # Replace the existing WebSocket voice endpoint with real-time voice
 @app.websocket("/ws/voice")
@@ -1118,40 +1014,8 @@ async def comics_stream_endpoint(schema: ComicsSchema):
     }
     return StreamingResponse(event_stream(), headers=headers, media_type="text/event-stream")
 
-# Add this new endpoint for TTS generation
-class VoiceResponseSchema(BaseModel):
-    """Schema for voice response (TTS) requests."""
-    text: str = Field(..., description="Text to convert to speech")
-    voice: str = Field("alloy", description="Voice to use for TTS")
 
-@app.post("/voice_response_endpoint")
-async def voice_response_endpoint(schema: VoiceResponseSchema):
-    """Generate speech from text using OpenAI's TTS API."""
-    try:
-        logger.info(f"Generating speech for text: '{schema.text[:100]}...'")
-        
-        # Import the TTS function
-        from AI_voice_functionality import text_to_speech
-        
-        # Generate speech
-        audio_data = await run_in_threadpool(text_to_speech, schema.text)
-        
-        if audio_data:
-            # Convert to hex string for JSON response
-            audio_hex = audio_data.hex()
-            return {
-                "success": True,
-                "audio_data": audio_hex,
-                "message": "Speech generated successfully"
-            }
-        else:
-            raise HTTPException(status_code=500, detail="Failed to generate speech")
-            
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error in voice response endpoint: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+
 
 # NEW: TEACHER BULK DATA ENDPOINT
 
