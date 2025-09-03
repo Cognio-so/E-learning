@@ -28,7 +28,7 @@ python-multipart
 langchain_perplexity
 sounddevice
 # silero_vad  # This package doesn't exist on PyPI
-# pyaudio     # Requires system dependencies - removed for deployment
+pyaudio
 numpy
 torch
 websockets
@@ -38,4 +38,3 @@ rank_bm25
 python-dotenv
 nest-asyncio
 boto3
-webrtcvad
