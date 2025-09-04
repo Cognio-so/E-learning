@@ -1,5 +1,5 @@
 "use client"
-import { memo, useMemo, useCallback } from "react";
+import { memo, useMemo, useCallback, useState } from "react";
 import { 
   AudioLines, 
   BarChart3, 
@@ -100,35 +100,69 @@ const MenuItem = memo(({ item, isActive, isCollapsed }) => (
 
 MenuItem.displayName = "MenuItem";
 
-// Memoized user profile component
-const UserProfile = memo(({ user, isCollapsed }) => (
-  <div className="flex items-center gap-3 p-2">
-    <Avatar>
-      <AvatarImage src={user?.imageUrl} />
-      <AvatarFallback>
-        {user?.name?.charAt(0) || "U"}
-      </AvatarFallback>
-    </Avatar>
-    <div className="group-data-[collapsible=icon]:hidden min-w-0 flex-1">
-      <p className="text-sm font-medium truncate">
-        {user?.name}
-      </p>
-      <p className="text-xs text-muted-foreground truncate">
-        {user?.email || ""}
-      </p>
+// Memoized user profile component - fixed overflow in footer
+const UserProfile = memo(({ user, isCollapsed, isExpanded, onToggle, onLogout }) => (
+  <div className="p-2 min-w-0 w-full">
+    <div 
+      className="flex items-center gap-2 cursor-pointer hover:bg-accent/50 rounded-md p-2 transition-colors min-w-0 w-full"
+      onClick={onToggle}
+    >
+      <Avatar className="flex-shrink-0 h-8 w-8">
+        <AvatarImage src={user?.imageUrl} />
+        <AvatarFallback className="text-xs">
+          {user?.name?.charAt(0) || "U"}
+        </AvatarFallback>
+      </Avatar>
+      <div className="group-data-[collapsible=icon]:hidden min-w-0 flex-1 overflow-hidden">
+        <p className="text-sm font-medium truncate">
+          {user?.name || "User"}
+        </p>
+        <p className="text-xs text-muted-foreground truncate">
+          {user?.email || "user@example.com"}
+        </p>
+      </div>
+      {/* Dropdown arrow */}
+      <div className="group-data-[collapsible=icon]:hidden flex-shrink-0 ml-auto">
+        <svg 
+          className={`w-4 h-4 transition-transform ${isExpanded ? 'rotate-180' : ''}`} 
+          fill="none" 
+          stroke="currentColor" 
+          viewBox="0 0 24 24"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </svg>
+      </div>
     </div>
+    
+    {/* Collapsible actions container */}
+    {isExpanded && (
+      <div className="mt-2 pt-2 border-t border-border">
+        <div className="flex items-center justify-between px-2">
+          <ThemeToggle />
+          <Button 
+            onClick={onLogout} 
+            variant="ghost" 
+            size="sm"
+            className="h-8 w-8 p-0 hover:bg-accent rounded-md"
+          >
+            <LogOut className="h-4 w-4" />
+            <span className="sr-only">Logout</span>
+          </Button>
+        </div>
+      </div>
+    )}
   </div>
 ));
 
 UserProfile.displayName = "UserProfile";
 
-// Memoized logo component
+// Memoized logo component - fixed overflow
 const Logo = memo(({ isCollapsed }) => (
-  <div className="flex items-center">
-    <span className="text-2xl font-bold group-data-[collapsible=icon]:hidden">
+  <div className="flex items-center min-w-0">
+    <span className="text-xl font-bold group-data-[collapsible=icon]:hidden truncate">
       ED-Teach
     </span>
-    <span className="text-xl font-bold hidden group-data-[collapsible=icon]:block">
+    <span className="text-lg font-bold hidden group-data-[collapsible=icon]:block">
       ED
     </span>
   </div>
@@ -142,6 +176,7 @@ export function TeacherSidebar() {
   const pathname = usePathname();
   const isCollapsed = state === "collapsed";
   const router = useRouter();
+  const [isProfileExpanded, setIsProfileExpanded] = useState(false);
   // Memoize active path check
   const isActivePath = useCallback((url) => {
     return pathname === url;
@@ -161,15 +196,19 @@ export function TeacherSidebar() {
     router.push("/auth/login");
   }
 
+  const toggleProfile = () => {
+    setIsProfileExpanded(!isProfileExpanded);
+  }
+
   return (
     <Sidebar collapsible="icon">
       {/* Header with logo */}
-      <SidebarHeader className="border-b border-border">
-        <div className="flex items-center justify-between p-4">
+      <SidebarHeader className="border-b border-border min-w-0">
+        <div className="flex items-center justify-between p-3 min-w-0">
           <Logo isCollapsed={isCollapsed} />
           
           {/* Sidebar Trigger - only visible when expanded */}
-          <div className="group-data-[collapsible=icon]:hidden">
+          <div className="group-data-[collapsible=icon]:hidden flex-shrink-0">
             <SidebarTrigger className="h-6 w-6" />
           </div>
         </div>
@@ -193,22 +232,22 @@ export function TeacherSidebar() {
       </SidebarContent>
       
       {/* Footer with user profile */}
-      <SidebarFooter className="border-t border-border mt-auto">
+      <SidebarFooter className="border-t border-border mt-auto min-w-0 w-full">
         <div className="hidden group-data-[collapsible=icon]:block border-b border-border">
           <div className="flex justify-center p-2">
             <SidebarTrigger className="h-6 w-6" />
           </div>
         </div>
 
-        <div className="flex items-center justify-center gap-2 p-2">
-          <ThemeToggle />
-        <Button onClick={handleLogout} variant="ghost">
-          {isCollapsed ? <LogOut className="h-4 w-4" /> : <LogOut className="h-4 w-4" />}
-          <span className="text-sm font-medium group-data-[collapsible=icon]:hidden">Logout</span>
-        </Button>
+        <div className="w-full min-w-0">
+          <UserProfile 
+            user={user} 
+            isCollapsed={isCollapsed} 
+            isExpanded={isProfileExpanded}
+            onToggle={toggleProfile}
+            onLogout={handleLogout}
+          />
         </div>
-        
-        <UserProfile user={user} isCollapsed={isCollapsed} />
       </SidebarFooter>
     </Sidebar>
   )

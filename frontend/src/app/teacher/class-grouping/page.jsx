@@ -39,7 +39,8 @@ import {
   Download,
   MessageSquare,
   ThumbsUp,
-  ThumbsDown
+  ThumbsDown,
+  RefreshCw
 } from 'lucide-react'
 import { subjects, grades } from '@/config/data'
 import useStudentStore from '@/store/useStudentStore'
@@ -47,6 +48,7 @@ import useAssessmentStore from '@/store/useAssessmentStore'
 import useProgressStore from '@/store/useProgressStore'
 import useFeedbackStore from '@/store/useFeedbackStore'
 import { toast } from 'sonner'
+import useAuthStore from '@/store/useAuthStore'
 
 const ClassGroupingPage = () => {
   const [selectedStudent, setSelectedStudent] = useState(null)
@@ -89,6 +91,8 @@ const ClassGroupingPage = () => {
     getUserFeedback,
     feedback
   } = useFeedbackStore()
+
+  const { user } = useAuthStore()
 
   useEffect(() => {
     fetchStudents()
@@ -325,6 +329,55 @@ const ClassGroupingPage = () => {
   }
 
   const studentGroups = groupStudents()
+
+  // Handle empty state when no students are found
+  if (!isLoading && students.length === 0) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-pink-50 via-white to-pink-50 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950">
+        <div className="container mx-auto px-4 py-6 space-y-6">
+          {/* Header */}
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+            <div className="space-y-2">
+              <h1 className="text-2xl lg:text-3xl font-bold text-gray-900 dark:text-white">
+                Class Grouping & Student Management
+              </h1>
+              <p className="text-sm lg:text-base text-gray-600 dark:text-gray-300">
+                Manage student groups and assign assessments with real-time data
+              </p>
+            </div>
+          </div>
+
+          {/* Empty State */}
+          <div className="flex items-center justify-center min-h-[400px]">
+            <div className="text-center max-w-md">
+              <div className="mx-auto w-24 h-24 bg-blue-100 dark:bg-blue-900/20 rounded-full flex items-center justify-center mb-6">
+                <Users className="w-12 h-12 text-blue-600 dark:text-blue-400" />
+              </div>
+              <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-3">
+                No Students Found
+              </h2>
+              <p className="text-gray-600 dark:text-gray-300 mb-6">
+                There are currently no students registered in your grade level. Students will appear here once they register with the same grade as yours.
+              </p>
+              <div className="space-y-3">
+                <Button 
+                  onClick={fetchStudents} 
+                  variant="outline"
+                  className="w-full"
+                >
+                  <RefreshCw className="w-4 h-4 mr-2" />
+                  Refresh
+                </Button>
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  You can also check back later when students register
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   if (error) {
     return (

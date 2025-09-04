@@ -53,6 +53,11 @@ const slideSchema = new mongoose.Schema({
         type: String,
         default: 'pending',
     },
+    createdBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+        required: true
+    }
 }, { timestamps: true });
 
 const Slide = mongoose.model('Slide', slideSchema);

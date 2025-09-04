@@ -965,7 +965,7 @@ const ContentGeneratorPage = () => {
                 isExported={isExported}
                 isSaved={isSaved}
                 isSaving={isSaving}
-                onGenerateSlides={() => setSlideDialogOpen(true)} // Always show the button
+                onGenerateSlides={contentType === 'presentation' ? () => setSlideDialogOpen(true) : undefined}
               />
             )}
           </TabsContent>

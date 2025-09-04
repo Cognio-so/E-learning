@@ -102,8 +102,12 @@ const uploadComicImage = async (req, res) => {
 
 const createWebSearch = async (req, res) => {
     try {
+        if (req.user.role !== "teacher") {
+            return res.status(403).json({ message: "Unauthorized" });
+        }
+        
         const { searchTopic, contentType, subject, grade, comprehensionLevel, gradeLevel, language, searchResults } = req.body;
-
+        
         if (!searchTopic || !contentType || !subject || !grade || !comprehensionLevel || !gradeLevel || !language) {
             return res.status(400).json({ message: "All fields are required" });
         }
@@ -115,13 +119,12 @@ const createWebSearch = async (req, res) => {
             grade, 
             comprehensionLevel, 
             gradeLevel, 
-            language,
+            language, 
             searchResults: searchResults || '',
-            status: 'completed'
+            createdBy: req.user.id
         });
 
         res.status(201).json(webSearch);
-
     } catch (error) {
         console.error(error);
         res.status(500).json({ message: "Internal server error" });
@@ -130,7 +133,11 @@ const createWebSearch = async (req, res) => {
 
 const fetchWebSearch = async (req, res) => {
     try {
-        const webSearches = await WebSearch.find();
+        if (req.user.role !== "teacher") {
+            return res.status(403).json({ message: "Unauthorized - Teacher role required" });
+        }
+        
+        const webSearches = await WebSearch.find({ createdBy: req.user.id }).sort({ createdAt: -1 });
         if(!webSearches) {
             return res.status(404).json({ message: "No web searches found" });
         }
@@ -213,7 +220,8 @@ const createImage = async (req, res) => {
             language, 
             imageUrl: finalImageUrl,
             status: status || 'completed',
-            results: [] // Initialize empty results array
+            results: [], // Initialize empty results array
+            createdBy: req.user.id
         });
 
         res.status(201).json(image);
@@ -225,7 +233,11 @@ const createImage = async (req, res) => {
 
 const fetchImage = async (req, res) => {
     try {
-        const images = await Image.find();
+        if (req.user.role !== "teacher") {
+            return res.status(403).json({ message: "Unauthorized - Teacher role required" });
+        }
+        
+        const images = await Image.find({ createdBy: req.user.id }).sort({ createdAt: -1 });
         if(!images) {
             return res.status(404).json({ message: "No images found" });
         }
@@ -286,7 +298,8 @@ const createComic = async (req, res) => {
             grade, 
             language, 
             comicType,
-            imageUrls: imageUrls || [] // Add the image URLs from Cloudinary
+            imageUrls: imageUrls || [], // Add the image URLs from Cloudinary
+            createdBy: req.user.id
         });
         res.status(201).json(comic);
     } catch (error) {
@@ -297,7 +310,11 @@ const createComic = async (req, res) => {
 
 const fetchComic = async (req, res) => {
     try {
-        const comics = await Comic.find();
+        if (req.user.role !== "teacher") {
+            return res.status(403).json({ message: "Unauthorized - Teacher role required" });
+        }
+        
+        const comics = await Comic.find({ createdBy: req.user.id }).sort({ createdAt: -1 });
         if(!comics) {
             return res.status(404).json({ message: "No comics found" });
         }
@@ -347,25 +364,13 @@ const createSlide = async (req, res) => {
         if (req.user.role !== "teacher") {
             return res.status(403).json({ message: "Unauthorized" });
         }
-        const { 
-            title, 
-            subject, 
-            grade, 
-            verbosity, 
-            topic, 
-            stockImage, 
-            customInstruction, 
-            language,
-            presentationUrl,
-            downloadUrl,
-            slideCount,
-            status
-        } = req.body;
+        
+        const { title, subject, grade, verbosity, topic, stockImage, customInstruction, language, results, presentationUrl, downloadUrl, slideCount, status } = req.body;
         
         if (!title || !subject || !grade || !verbosity || !topic || stockImage === undefined || !customInstruction || !language) {
-            return res.status(400).json({ message: "All required fields are required" });
+            return res.status(400).json({ message: "All fields are required" });
         }
-        
+
         const slide = await Slide.create({ 
             title, 
             subject, 
@@ -374,13 +379,15 @@ const createSlide = async (req, res) => {
             topic, 
             stockImage, 
             customInstruction, 
-            language,
+            language, 
+            results: results || [],
             presentationUrl: presentationUrl || null,
             downloadUrl: downloadUrl || null,
             slideCount: slideCount || 0,
-            status: status || 'completed',
-            results: [] // Initialize empty results array
+            status: status || 'pending',
+            createdBy: req.user.id
         });
+
         res.status(201).json(slide);
     } catch (error) {
         console.error(error);
@@ -390,7 +397,11 @@ const createSlide = async (req, res) => {
 
 const fetchSlide = async (req, res) => {
     try {
-        const slides = await Slide.find();
+        if (req.user.role !== "teacher") {
+            return res.status(403).json({ message: "Unauthorized - Teacher role required" });
+        }
+        
+        const slides = await Slide.find({ createdBy: req.user.id }).sort({ createdAt: -1 });
         if (!slides) {
             return res.status(404).json({ message: "No slides found" });
         }

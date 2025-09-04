@@ -38,6 +38,7 @@ import useAssessmentStore from '@/store/useAssessmentStore'
 import useStudentStore from '@/store/useStudentStore'
 import useTeacherReportsStore from '@/store/useTeacherReportsStore'
 import useMediaStore from '@/store/useMediaStore'
+import useContentStore from '@/store/useContentStore'
 
 const DashboardPage = () => {
   const { user } = useAuthStore()
@@ -47,6 +48,7 @@ const DashboardPage = () => {
   const { students, fetchStudents } = useStudentStore()
   const { reportData, fetchTeacherReports } = useTeacherReportsStore()
   const { comics, images, slides, webSearch, initializeComics, initializeImages, initializeSlides, initializeWebSearch } = useMediaStore()
+  const { savedContent, fetchSavedContent } = useContentStore()
   
   // Calculate real stats from actual data
   const stats = {
@@ -84,7 +86,8 @@ const DashboardPage = () => {
           initializeComics(),
           initializeImages(),
           initializeSlides(),
-          initializeWebSearch()
+          initializeWebSearch(),
+          fetchSavedContent()
         ])
       } catch (error) {
         console.error('Error loading dashboard data:', error)
@@ -94,7 +97,7 @@ const DashboardPage = () => {
     if (user?.id) {
       loadDashboardData()
     }
-  }, [user?.id, fetchLessons, fetchAssessments, fetchLearningStats, fetchStudents, fetchTeacherReports, initializeComics, initializeImages, initializeSlides, initializeWebSearch])
+  }, [user?.id, fetchLessons, fetchAssessments, fetchLearningStats, fetchStudents, fetchTeacherReports, initializeComics, initializeImages, initializeSlides, initializeWebSearch, fetchSavedContent])
 
   const containerVariants = {
     hidden: { opacity: 0 },
@@ -328,37 +331,60 @@ const DashboardPage = () => {
 
           {/* Right Column - Sidebar Content */}
           <div className="space-y-6">
-            {/* Today's Schedule */}
+            {/* Quick Stats - Replaces Today's Schedule */}
             <motion.div variants={itemVariants}>
               <Card className="bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm border-0 shadow-lg">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
-                    <Calendar className="h-5 w-5 text-green-600" />
-                    Today's Schedule
+                    <BarChart3 className="h-5 w-5 text-indigo-600" />
+                    Quick Stats
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="space-y-3">
-                    <div className="flex items-center gap-3 p-2 rounded-lg bg-green-50 dark:bg-green-900/20">
-                      <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                      <div className="flex-1">
-                        <p className="text-sm font-medium text-slate-900 dark:text-white">Math Class</p>
-                        <p className="text-xs text-slate-600 dark:text-slate-400">9:00 AM - 10:30 AM</p>
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between p-2 rounded-lg bg-indigo-50 dark:bg-indigo-900/20">
+                      <div className="flex items-center gap-2">
+                        <BookOpen className="h-4 w-4 text-indigo-600" />
+                        <span className="text-sm text-slate-700 dark:text-slate-300">Total Content</span>
                       </div>
+                      <span className="text-sm font-semibold text-indigo-700 dark:text-indigo-300">
+                        {(savedContent?.length || 0) + (assessments?.length || 0) + (images?.saved?.length || 0) + (comics?.saved?.length || 0) + (slides?.saved?.length || 0) + (webSearch?.saved?.length || 0)}
+                      </span>
                     </div>
-                    <div className="flex items-center gap-3 p-2 rounded-lg bg-blue-50 dark:bg-blue-900/20">
-                      <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-                      <div className="flex-1">
-                        <p className="text-sm font-medium text-slate-900 dark:text-white">Science Lab</p>
-                        <p className="text-xs text-slate-600 dark:text-slate-400">11:00 AM - 12:30 PM</p>
+                    
+                    <div className="flex items-center justify-between p-2 rounded-lg bg-green-50 dark:bg-green-900/20">
+                      <div className="flex items-center gap-2">
+                        <Users className="h-4 w-4 text-green-600" />
+                        <span className="text-sm text-slate-700 dark:text-slate-300">Active Students</span>
                       </div>
+                      <span className="text-sm font-semibold text-green-700 dark:text-green-300">
+                        {students?.filter(s => new Date(s.lastActive || s.createdAt) > new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)).length || 0}
+                      </span>
                     </div>
-                    <div className="flex items-center gap-3 p-2 rounded-lg bg-purple-50 dark:bg-purple-900/20">
-                      <div className="w-2 h-2 bg-purple-500 rounded-full"></div>
-                      <div className="flex-1">
-                        <p className="text-sm font-medium text-slate-900 dark:text-white">English Literature</p>
-                        <p className="text-xs text-slate-600 dark:text-slate-400">2:00 PM - 3:30 PM</p>
+                    
+                    <div className="flex items-center justify-between p-2 rounded-lg bg-purple-50 dark:bg-purple-900/20">
+                      <div className="flex items-center gap-2">
+                        <Target className="h-4 w-4 text-purple-600" />
+                        <span className="text-sm text-slate-700 dark:text-slate-300">Pending Tasks</span>
                       </div>
+                      <span className="text-sm font-semibold text-purple-700 dark:text-purple-300">
+                        {assessments?.filter(assessment => assessment.status === 'pending' || !assessment.status).length || 0}
+                      </span>
+                    </div>
+                    
+                    <div className="flex items-center justify-between p-2 rounded-lg bg-orange-50 dark:bg-orange-900/20">
+                      <div className="flex items-center gap-2">
+                        <Clock className="h-4 w-4 text-orange-600" />
+                        <span className="text-sm text-slate-700 dark:text-slate-300">This Week</span>
+                      </div>
+                      <span className="text-sm font-semibold text-orange-700 dark:text-orange-300">
+                        {lessons?.filter(lesson => {
+                          const lessonDate = new Date(lesson.createdAt || lesson.date)
+                          const weekAgo = new Date()
+                          weekAgo.setDate(weekAgo.getDate() - 7)
+                          return lessonDate >= weekAgo
+                        }).length || 0}
+                      </span>
                     </div>
                   </div>
                 </CardContent>
@@ -398,39 +424,6 @@ const DashboardPage = () => {
                         <p className="text-sm">No assessments yet</p>
                       </div>
                     )}
-                  </div>
-                </CardContent>
-              </Card>
-            </motion.div>
-
-            {/* Performance Insights */}
-            <motion.div variants={itemVariants}>
-              <Card className="bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm border-0 shadow-lg">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <TrendingUp className="h-5 w-5 text-blue-600" />
-                    Performance Insights
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-slate-600 dark:text-slate-400">Class Engagement</span>
-                      <span className="text-sm font-medium text-slate-900 dark:text-white">85%</span>
-                    </div>
-                    <Progress value={85} className="h-2" />
-                    
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-slate-600 dark:text-slate-400">Assignment Completion</span>
-                      <span className="text-sm font-medium text-slate-900 dark:text-white">92%</span>
-                    </div>
-                    <Progress value={92} className="h-2" />
-                    
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-slate-600 dark:text-slate-400">Student Satisfaction</span>
-                      <span className="text-sm font-medium text-slate-900 dark:text-white">88%</span>
-                    </div>
-                    <Progress value={88} className="h-2" />
                   </div>
                 </CardContent>
               </Card>

@@ -228,19 +228,38 @@ const getCurrentUser = async (req, res) => {
 
 const getAllStudents = async (req, res) => {
     try {
-        const students = await User.find({ role: 'student' });
-        if(students.length === 0) {
-            return res.status(404).json({ success: false, message: 'No students found' });
+        // Get teacher's grade from req.user (set by auth middleware)
+        const teacherGrade = req.user.grade;
+        
+        if (!teacherGrade) {
+            return res.status(400).json({ 
+                success: false, 
+                message: 'Teacher grade not found. Please complete your profile.' 
+            });
         }
-        return res.status(200).json({ success: true, students: students.map(student => ({
-            _id: student._id,
-            name: student.name,
-            email: student.email,
-            role: student.role,
-            isVerified: student.isVerified, // Make sure this is included
-            createdAt: student.createdAt,
-            lastActive: student.lastActive,
-        })) });
+
+        // Filter students by the same grade as the teacher
+        const students = await User.find({ 
+            role: 'student',
+            grade: teacherGrade 
+        });
+        
+        // Return empty array instead of 404 when no students found
+        // This allows the frontend to handle the empty state gracefully
+        return res.status(200).json({ 
+            success: true, 
+            students: students.map(student => ({
+                _id: student._id,
+                name: student.name,
+                email: student.email,
+                role: student.role,
+                grade: student.grade,
+                isVerified: student.isVerified,
+                createdAt: student.createdAt,
+                lastActive: student.lastActive,
+            })),
+            message: students.length === 0 ? `No students found in Grade ${teacherGrade === 'K' ? 'Kindergarten' : teacherGrade}` : null
+        });
     } catch (error) {
         console.error('Get All Students Error:', error);
         return res.status(500).json({ success: false, message: error.message });
