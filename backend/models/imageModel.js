@@ -29,14 +29,15 @@ const imageSchema = new mongoose.Schema({
         type: String,
         default: null,
     },
-    imageUrl: {
-        type: String,
-        default: null,
-    },
     status: {
         type: String,
         default: 'completed',
     },
+    createdBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+        required: true
+    }
 }, { timestamps: true });
 
 const Image = mongoose.model('Image', imageSchema);

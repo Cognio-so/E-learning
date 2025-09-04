@@ -37,6 +37,11 @@ const webSearchSchema = new mongoose.Schema({
         type: String,
         default: 'completed',
     },
+    createdBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+        required: true
+    }
 }, { timestamps: true });
 
 const WebSearch = mongoose.model('WebSearch', webSearchSchema);
