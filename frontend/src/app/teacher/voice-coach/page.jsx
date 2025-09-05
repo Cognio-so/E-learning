@@ -36,12 +36,13 @@ import { MarkdownStyles } from '@/components/chat/Markdown';
 import { AIMarkdown } from "@/components/ui/ai-markdown"
 
 const VoiceCoach = () => {
+    // Fix 1: Replace the initial messages state to avoid hydration mismatch
     const [messages, setMessages] = useState([
         {
             id: 1,
             type: 'ai',
             content: "Hi there! 👋 I'm your AI Teaching Assistant! I'm here to help you analyze student performance, improve your teaching strategies, and enhance your lesson plans. What would you like to work on today?",
-            timestamp: new Date(),
+            timestamp: new Date('2024-01-01T00:00:00.000Z'), // Fixed timestamp
             avatar: <Sparkle className="w-4 h-4 text-yellow-500" />
         }
     ]);
@@ -57,7 +58,21 @@ const VoiceCoach = () => {
     const mediaStreamRef = useRef(null);
     const hasErrorRef = useRef(false);
 
-    // Store hooks - Fix the media store function names (remove non-existent functions)
+    // Fix 2: Add the missing refs and state variables (add these after line 58)
+    const nextStartTimeRef = useRef(0);  // For audio scheduling
+    const audioBufferRef = useRef([]);  // Buffer for audio chunks
+    const isPlayingRef = useRef(false);  // Track if audio is playing
+    const audioSourcesRef = useRef([]);
+    const isStreamingRef = useRef(false);
+    const streamStartTimeRef = useRef(0);
+    const audioQualityMetrics = useRef({
+        chunksProcessed: 0,
+        averageLatency: 0,
+        dropouts: 0,
+        bufferUnderruns: 0
+    });
+
+    // Store hooks
     const { user } = useAuthStore();
     const { 
         reportData,
@@ -76,12 +91,10 @@ const VoiceCoach = () => {
         images, 
         slides, 
         webSearch,
-        // REMOVE: video - this doesn't exist in backend
         initializeComics,
         initializeImages,
         initializeSlides,
         initializeWebSearch
-        // REMOVE: initializeVideo - this function doesn't exist
     } = useMediaStore();
     const { 
         progress, 
@@ -97,7 +110,7 @@ const VoiceCoach = () => {
         if (user) {
             setSessionId(`teacher_${user._id}_${Date.now()}`);
             
-            // Fetch all teacher data from various stores - REMOVE non-existent functions
+            // Fetch all teacher data from various stores
             const fetchAllTeacherData = async () => {
                 try {
                     await Promise.all([
@@ -106,12 +119,11 @@ const VoiceCoach = () => {
                         fetchAssessments(),
                         fetchUserProgress(user._id),
                         getUserFeedback(user._id),
-                        // Initialize media data - use only existing functions
+                        // Initialize media data
                         initializeComics(),
                         initializeImages(),
                         initializeSlides(),
                         initializeWebSearch()
-                        // REMOVE: initializeVideo() - this function doesn't exist
                     ]);
                     console.log('All teacher data fetched successfully');
                 } catch (error) {
@@ -282,7 +294,7 @@ const VoiceCoach = () => {
             console.log('Sending comprehensive teacher data with enhanced details:', teacherData);
 
             // Start streaming response using teacher voice chat endpoint
-            const response = await PythonApi.startTeacherVoiceChat(teacherData, sessionId);
+            const response = await PythonApi.startTeacherVoiceChat(teacherData, sessionId, currentQuery);
 
             if (!response.ok) {
                 const errorText = await response.text();
@@ -415,7 +427,7 @@ const VoiceCoach = () => {
                 studentPerformance: reportData?.performance || {},
                 studentOverview: reportData?.overview || {},
                 topPerformers: reportData?.topPerformers || [],
-                subjectPerformance: reportData?.subjects || [],
+                subjectPerformance: reportData?.subjects || {},
                 behaviorAnalysis: reportData?.behaviorAnalysis || {},
                 attendanceData: reportData?.attendance || {},
                 
@@ -606,7 +618,321 @@ const VoiceCoach = () => {
         }
     };
 
-    // ... existing code for microphone capture and voice handling ...
+    // Add proper voice message handling like in student ai-tutor
+    // Fix 5: Update the handleVoiceMessage function to use non-blocking audio processing
+    const handleVoiceMessage = async (data) => {
+        switch (data.type) {
+            case 'session_started':
+                toast.success('Ready for real-time conversation');
+                setIsListening(true);
+                // Reset all audio streaming state for new session
+                nextStartTimeRef.current = 0;
+                audioBufferRef.current = [];
+                isPlayingRef.current = false;
+                isStreamingRef.current = false;
+                audioSourcesRef.current = [];
+                streamStartTimeRef.current = 0;
+                // Reset quality metrics for new session
+                audioQualityMetrics.current = {
+                    chunksProcessed: 0,
+                    averageLatency: 0,
+                    dropouts: 0,
+                    bufferUnderruns: 0
+                };
+                console.log('Audio streaming state and quality metrics reset for new session');
+                break;
+            case 'session.created':
+                console.log('OpenAI session created');
+                break;
+            case 'response.audio.delta':
+                // Play audio response from OpenAI with enhanced processing
+                const audioData = data.audio || data.delta;
+                if (audioData) {
+                    // Use non-blocking audio processing to prevent WebSocket delays
+                    setTimeout(() => playAudioFromBase64(audioData), 0);
+                } else {
+                    console.warn('No audio data in response.audio.delta event');
+                    audioQualityMetrics.current.dropouts++;
+                }
+                break;
+            case 'input_audio_buffer.speech_started':
+                console.log('Speech detected');
+                break;
+            case 'input_audio_buffer.speech_stopped':
+                console.log('Speech ended');
+                break;
+            case 'conversation.item.input_audio_transcription.completed':
+                if (data.transcript) {
+                    setTranscription(data.transcript);
+                }
+                break;
+            case 'response.done':
+            case 'response.completed':
+                console.log('Response completed');
+                break;
+            case 'error':
+                console.error('Voice session error:', data.message);
+                toast.error(data.message);
+                break;
+            default:
+                console.log('Received voice event:', data.type);
+        }
+    };
+
+    // Fix 3: Replace the simple playAudioFromBase64 function with the advanced one from student ai-tutor
+    const playAudioFromBase64 = async (base64Audio) => {
+        // Ensure we have an audio context - reuse existing one
+        let currentAudioContext = audioContext;
+        if (!currentAudioContext || currentAudioContext.state === 'closed') {
+            console.log('Creating audio context for playback');
+            currentAudioContext = new (window.AudioContext || window.webkitAudioContext)({ 
+                sampleRate: 24000,
+                latencyHint: 'interactive' // Optimize for low latency
+            });
+            setAudioContext(currentAudioContext);
+            
+            // Reset timing when creating new context
+            nextStartTimeRef.current = currentAudioContext.currentTime;
+        }
+        
+        // Resume if suspended
+        if (currentAudioContext.state === 'suspended') {
+            await currentAudioContext.resume();
+        }
+        
+        // Validate audio context state
+        if (currentAudioContext.state === 'closed') {
+            console.error('AudioContext is closed, cannot play audio');
+            return;
+        }
+        
+        try {
+            // Validate base64 input
+            if (!base64Audio || typeof base64Audio !== 'string') {
+                console.warn('Invalid base64 audio data received');
+                return;
+            }
+            
+            // Convert base64 to ArrayBuffer with error handling
+            let binaryString, bytes;
+            try {
+                binaryString = atob(base64Audio);
+                bytes = new Uint8Array(binaryString.length);
+                for (let i = 0; i < binaryString.length; i++) {
+                    bytes[i] = binaryString.charCodeAt(i);
+                }
+            } catch (decodeError) {
+                console.error('Failed to decode base64 audio:', decodeError);
+                return;
+            }
+            
+            // Validate minimum audio chunk size (prevent micro-chunks)
+            if (bytes.length < 960) { // 20ms at 24kHz, 16-bit = 960 bytes
+                console.log('Audio chunk too small, skipping:', bytes.length);
+                return;
+            }
+            
+            // Create Int16Array from bytes (little-endian format)
+            const pcm16 = new Int16Array(bytes.buffer);
+            
+            // Apply audio enhancement and normalization
+            const float32 = new Float32Array(pcm16.length);
+            let maxAmplitude = 0;
+            
+            // Convert PCM16 to Float32 and find max amplitude
+            for (let i = 0; i < pcm16.length; i++) {
+                float32[i] = pcm16[i] / 32768.0;
+                maxAmplitude = Math.max(maxAmplitude, Math.abs(float32[i]));
+            }
+            
+            // Apply soft limiting and normalization if needed
+            if (maxAmplitude > 0.95) {
+                const compressionRatio = 0.9 / maxAmplitude;
+                for (let i = 0; i < float32.length; i++) {
+                    float32[i] *= compressionRatio;
+                }
+                console.log('Applied audio compression, ratio:', compressionRatio);
+            }
+            
+            // Create audio buffer with validation
+            if (float32.length === 0) {
+                console.warn('Empty audio data, skipping');
+                return;
+            }
+            
+            const audioBuffer = currentAudioContext.createBuffer(1, float32.length, 24000);
+            audioBuffer.getChannelData(0).set(float32);
+            
+            // Quality metrics tracking
+            audioQualityMetrics.current.chunksProcessed++;
+            const receiveTime = currentAudioContext.currentTime;
+            
+            // Add to audio buffer queue with enhanced metadata
+            audioBufferRef.current.push({
+                buffer: audioBuffer,
+                timestamp: receiveTime,
+                duration: audioBuffer.duration,
+                chunkId: audioQualityMetrics.current.chunksProcessed,
+                size: bytes.length
+            });
+            
+            // Better buffer management - trim when buffer gets too large
+            if (audioBufferRef.current.length > 50) {
+                const removedChunks = audioBufferRef.current.length - 25;
+                audioBufferRef.current = audioBufferRef.current.slice(-25);
+                audioQualityMetrics.current.dropouts += removedChunks;
+                console.log(`Audio buffer trimmed: removed ${removedChunks} chunks, buffer size: ${audioBufferRef.current.length}`);
+            }
+            
+            // Start processing queue if not already streaming
+            if (!isStreamingRef.current) {
+                processAudioStream(currentAudioContext);
+            }
+            
+        } catch (error) {
+            console.error('Failed to prepare audio:', error);
+            audioQualityMetrics.current.dropouts++;
+        }
+    };
+
+    // Fix 4: Add the processAudioStream function from student ai-tutor
+    const processAudioStream = (currentAudioContext) => {
+        if (audioBufferRef.current.length === 0) {
+            isStreamingRef.current = false;
+            // Log quality metrics when stream ends
+            if (audioQualityMetrics.current.chunksProcessed > 0) {
+                console.log('Audio stream ended. Quality metrics:', audioQualityMetrics.current);
+            }
+            return;
+        }
+        
+        isStreamingRef.current = true;
+        
+        // Get the next audio chunk
+        const audioChunk = audioBufferRef.current.shift();
+        
+        // Validate audio context is still usable
+        if (currentAudioContext.state === 'closed') {
+            console.error('AudioContext closed during playback');
+            isStreamingRef.current = false;
+            return;
+        }
+        
+        // Create audio source with error handling
+        let source;
+        try {
+            source = currentAudioContext.createBufferSource();
+            source.buffer = audioChunk.buffer;
+            
+            // Create gain node for volume control and fade effects
+            const gainNode = currentAudioContext.createGain();
+            source.connect(gainNode);
+            gainNode.connect(currentAudioContext.destination);
+            
+            // Apply subtle fade-in to prevent clicks
+            const now = currentAudioContext.currentTime;
+            gainNode.gain.setValueAtTime(0, now);
+            gainNode.gain.linearRampToValueAtTime(1, now + 0.003); // 3ms fade-in
+            
+        } catch (error) {
+            console.error('Failed to create audio source:', error);
+            audioQualityMetrics.current.dropouts++;
+            // Continue with next chunk
+            setTimeout(() => processAudioStream(currentAudioContext), 10);
+            return;
+        }
+        
+        // Better timing calculation
+        const now = currentAudioContext.currentTime;
+        
+        // Reset timing if drift is too large or if this is the first chunk
+        if (nextStartTimeRef.current === 0 || nextStartTimeRef.current > now + 0.5) {
+            nextStartTimeRef.current = now + 0.01;
+        }
+        
+        // Ensure smooth playback with minimal gaps
+        const scheduledStartTime = Math.max(now + 0.005, nextStartTimeRef.current);
+        
+        // Start playing with error handling
+        try {
+            source.start(scheduledStartTime);
+            
+            // Update timing for next chunk - no gaps needed for continuous audio
+            nextStartTimeRef.current = scheduledStartTime + audioChunk.duration;
+            
+        } catch (startError) {
+            console.error('Failed to start audio source:', startError);
+            audioQualityMetrics.current.dropouts++;
+            // Continue with next chunk
+            setTimeout(() => processAudioStream(currentAudioContext), 10);
+            return;
+        }
+        
+        // Enhanced source management
+        audioSourcesRef.current.push({
+            source: source,
+            startTime: scheduledStartTime,
+            endTime: scheduledStartTime + audioChunk.duration,
+            chunkId: audioChunk.chunkId
+        });
+        
+        // Cleanup old sources more aggressively
+        const currentTime = currentAudioContext.currentTime;
+        audioSourcesRef.current = audioSourcesRef.current.filter((sourceInfo, index) => {
+            if (sourceInfo.endTime < currentTime - 0.5) {
+                // Source has finished playing and is old enough to clean up
+                try {
+                    sourceInfo.source.disconnect();
+                } catch (e) {
+                    // Already disconnected
+                }
+                return false;
+            }
+            return true;
+        });
+        
+        // Keep maximum of 10 active sources (reduced from 15)
+        if (audioSourcesRef.current.length > 10) {
+            const excess = audioSourcesRef.current.splice(0, audioSourcesRef.current.length - 10);
+            excess.forEach(sourceInfo => {
+                try {
+                    sourceInfo.source.stop();
+                    sourceInfo.source.disconnect();
+                } catch (e) {
+                    // Already stopped/disconnected
+                }
+            });
+        }
+        
+        // Schedule next chunk processing immediately for continuous playback
+        source.onended = () => {
+            // Process next chunk immediately for seamless audio
+            processAudioStream(currentAudioContext);
+        };
+        
+        // Enhanced error handling
+        source.onerror = (error) => {
+            console.error('Audio source error:', error);
+            audioQualityMetrics.current.dropouts++;
+            // Continue with next chunk
+            setTimeout(() => processAudioStream(currentAudioContext), 10);
+        };
+        
+        // Detailed logging for debugging (only log every 20th chunk to reduce spam)
+        if (audioChunk.chunkId % 20 === 0) {
+            console.log('Audio stream status:', {
+                chunkId: audioChunk.chunkId,
+                duration: audioChunk.duration,
+                startTime: scheduledStartTime,
+                nextStartTime: nextStartTimeRef.current,
+                queueLength: audioBufferRef.current.length,
+                contextTime: currentAudioContext.currentTime,
+                timingGap: scheduledStartTime - currentAudioContext.currentTime,
+                activeSources: audioSourcesRef.current.length,
+                qualityMetrics: audioQualityMetrics.current
+            });
+        }
+    };
 
     const toggleVoiceRecording = async () => {
         if (!isVoiceActive) {
@@ -624,6 +950,7 @@ const VoiceCoach = () => {
         }
     };
 
+    // Fix 6: Update the stopVoiceSession function to clean up audio sources
     const stopVoiceSession = () => {
         if (voiceWebSocket) {
             voiceWebSocket.close();
@@ -631,6 +958,23 @@ const VoiceCoach = () => {
             setIsVoiceActive(false);
             setIsListening(false);
             stopMicrophoneCapture();
+            
+            // Clean up audio streaming
+            isStreamingRef.current = false;
+            audioBufferRef.current = [];
+            nextStartTimeRef.current = 0;
+            
+            // Stop all audio sources
+            audioSourcesRef.current.forEach(source => {
+                try {
+                    source.source.stop();
+                    source.source.disconnect();
+                } catch (e) {
+                    // Source may already be stopped
+                }
+            });
+            audioSourcesRef.current = [];
+            
             if (audioContext && audioContext.state !== 'closed') {
                 audioContext.close().catch(e => console.error('Error closing AudioContext:', e));
             }
@@ -639,41 +983,105 @@ const VoiceCoach = () => {
         }
     };
 
+    // Replace the startMicrophoneCapture function with the modern approach from student ai-tutor
     const startMicrophoneCapture = async (ws) => {
         try {
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            const stream = await navigator.mediaDevices.getUserMedia({ 
+                audio: {
+                    echoCancellation: true,
+                    noiseSuppression: true,
+                    autoGainControl: true,
+                    sampleRate: 24000,
+                    channelCount: 1
+                } 
+            });
+            
             mediaStreamRef.current = stream;
-            const source = audioContext.createMediaStreamSource(stream);
-            source.connect(audioContext.destination);
-            setIsListening(true);
-            console.log('Microphone capture started');
-
-            ws.onmessage = (event) => {
-                const data = JSON.parse(event.data);
-                if (data.type === 'transcription') {
-                    setTranscription(data.content);
+            
+            // Use AudioContext for PCM processing
+            const audioCtx = audioContext || new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
+            const source = audioCtx.createMediaStreamSource(stream);
+            
+            // Create an analyser node as a modern alternative
+            const analyser = audioCtx.createAnalyser();
+            analyser.fftSize = 2048;
+            
+            // Create a buffer to capture audio
+            const bufferLength = analyser.fftSize;
+            const dataArray = new Float32Array(bufferLength);
+            
+            source.connect(analyser);
+            
+            // Process audio in chunks using setInterval instead of deprecated ScriptProcessor
+            const processAudio = setInterval(() => {
+                if (ws.readyState !== WebSocket.OPEN) {
+                    clearInterval(processAudio);
+                    return;
                 }
-            };
+                
+                // Get time domain data
+                analyser.getFloatTimeDomainData(dataArray);
+                
+                // Convert Float32Array to Int16Array (PCM16)
+                const pcm16 = new Int16Array(dataArray.length);
+                for (let i = 0; i < dataArray.length; i++) {
+                    const s = Math.max(-1, Math.min(1, dataArray[i]));
+                    pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+                }
+                
+                // Convert to base64
+                const uint8Array = new Uint8Array(pcm16.buffer);
+                let binary = '';
+                for (let i = 0; i < uint8Array.length; i++) {
+                    binary += String.fromCharCode(uint8Array[i]);
+                }
+                const base64Audio = btoa(binary);
+                
+                // Send to backend
+                ws.send(JSON.stringify({
+                    type: 'audio_chunk',
+                    audio: base64Audio
+                }));
+            }, 100); // Send every 100ms
+            
+            // Store for cleanup
+            mediaStreamRef.current.analyser = analyser;
+            mediaStreamRef.current.source = source;
+            mediaStreamRef.current.processInterval = processAudio;
+            
+            setIsListening(true);
 
         } catch (error) {
-            console.error('Error starting microphone capture:', error);
-            toast.error('Failed to access microphone. Please check permissions.');
+            console.error('Failed to start microphone:', error);
+            
+            if (error.name === 'NotAllowedError') {
+                toast.error('Microphone access denied. Please allow microphone permissions.');
+            } else if (error.name === 'NotFoundError') {
+                toast.error('No microphone found. Please connect a microphone.');
+            } else {
+                toast.error('Failed to access microphone. Please check your device.');
+            }
             setIsListening(false);
         }
     };
 
     const stopMicrophoneCapture = () => {
         if (mediaStreamRef.current) {
+            // Stop the audio processing interval
+            if (mediaStreamRef.current.processInterval) {
+                clearInterval(mediaStreamRef.current.processInterval);
+            }
+            
+            // Disconnect audio nodes
+            if (mediaStreamRef.current.source) {
+                mediaStreamRef.current.source.disconnect();
+            }
+            
+            // Stop all tracks
             mediaStreamRef.current.getTracks().forEach(track => track.stop());
             mediaStreamRef.current = null;
             setIsListening(false);
             console.log('Microphone capture stopped');
-        }
-    };
-
-    const handleVoiceMessage = (data) => {
-        if (data.type === 'transcription') {
-            setTranscription(data.content);
         }
     };
 

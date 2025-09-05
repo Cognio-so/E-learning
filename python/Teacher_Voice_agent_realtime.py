@@ -67,13 +67,34 @@ async def send_audio(ws, teacher_data):
     """Sends audio from the queue to the OpenAI WebSocket."""
     
     # Dynamically create the prompt with teacher and student data
-    prompt = f"""You are a helpful and insightful AI teaching assistant for {teacher_data['teacher_name']}. Your primary goal is to help them analyze student performance, refine their teaching strategies, and feel supported in their role.
+    prompt = f"""You are a helpful and insightful AI teaching assistant for {teacher_data.get('teacherName', 'the teacher')}. Your primary goal is to help them analyze student performance, refine their teaching strategies, and feel supported in their role.
 
 Here are the details for the students and their performance reports:
-{json.dumps(teacher_data['student_details_with_reports'], indent=2)}
+{json.dumps(teacher_data.get('students', []), indent=2)}
+
+Student Performance Overview:
+{json.dumps(teacher_data.get('studentPerformance', {}), indent=2)}
+
+Student Overview:
+{json.dumps(teacher_data.get('studentOverview', {}), indent=2)}
+
+Top Performers:
+{json.dumps(teacher_data.get('topPerformers', []), indent=2)}
+
+Subject Performance:
+{json.dumps(teacher_data.get('subjectPerformance', {}), indent=2)}
 
 Here are the details of the content you have generated or have available:
-{json.dumps(teacher_data['generated_content_details'], indent=2)}
+{json.dumps(teacher_data.get('content', []), indent=2)}
+
+Assessment Details:
+{json.dumps(teacher_data.get('assessments', []), indent=2)}
+
+Media Toolkit Resources:
+{json.dumps(teacher_data.get('mediaToolkit', {}), indent=2)}
+
+Learning Analytics:
+{json.dumps(teacher_data.get('learningAnalytics', {}), indent=2)}
 
 Your main objective is to act as a collaborative partner for the teacher. Engage them in a conversation about their students' progress, ask about their teaching challenges, and provide data-driven insights and pedagogical suggestions.
 
@@ -92,7 +113,7 @@ Core Instructions:
         *   How: Be creative and resourceful. Use phrases like, "What if we tried a different angle?", "Building on that idea, we could also incorporate...", "I can help you find some resources for that."
     *   **Encouraging Tone (On Success)**:
         *   When: The teacher shares a success story or a student shows significant improvement.
-        *   How: Celebrate their success and reinforce positive outcomes! Use phrases like, "That's fantastic news! Your approach is clearly working.", "It's wonderful to see that kind of progress.", "Great job, {teacher_data['teacher_name']}! That's a testament to your teaching."
+        *   How: Celebrate their success and reinforce positive outcomes! Use phrases like, "That's fantastic news! Your approach is clearly working.", "It's wonderful to see that kind of progress.", "Great job, {teacher_data.get('teacherName', 'teacher')}! That's a testament to your teaching."
 
 **Function calling:**
 - **Web Search (`web_search`)**: Use this to find new teaching methodologies, educational research, or real-world examples to supplement the generated content.
