@@ -264,6 +264,24 @@ class PythonApiClient {
     });
   }
 
+  // NEW: Document upload endpoint for TEACHER chatbot
+  async uploadDocumentsForTeacherChatbot(sessionId, files) {
+    const formData = new FormData();
+    formData.append('session_id', sessionId);
+    
+    if (files && files.length > 0) {
+      files.forEach((file, index) => {
+        formData.append('files', file);
+      });
+    }
+
+    return this.makeRequest('/teacher_upload_document_endpoint', {
+      method: 'POST',
+      body: formData,
+      headers: {} // Let browser set Content-Type for FormData
+    });
+  }
+
   // Legacy chatbot endpoint (for backward compatibility)
   async sendChatMessage(sessionId, query, files = [], history = [], webSearchEnabled = true) {
     const formData = new FormData();
@@ -529,4 +547,4 @@ class PythonApiClient {
   }
 }
 
-export default new PythonApiClient(); 
+export default new PythonApiClient();
