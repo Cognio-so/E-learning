@@ -442,8 +442,8 @@ class PythonApiClient {
     }
 
     // NEW: Teacher voice chat endpoint
-    async startTeacherVoiceChat(teacherData, sessionId) {
-      const url = `${this.baseUrl}/teacher_voice_chat_endpoint`;
+    async startTeacherVoiceChat(teacherData, sessionId, query, files = [], history = [], webSearchEnabled = true) {
+      const url = `${this.baseUrl}/teacher_tutor_endpoint`;
       
       // Transform teacher data to match backend schema
       const transformedTeacherData = {
@@ -475,9 +475,15 @@ class PythonApiClient {
         learning_analytics: teacherData.learningAnalytics || {}
       };
 
+      const uploadedFileNames = files.map(file => file.name);
+
       const payload = {
         session_id: sessionId,
-        teacher_data: transformedTeacherData
+        query: query,
+        history: history,
+        web_search_enabled: true,
+        teacher_data: transformedTeacherData,
+        uploaded_files: uploadedFileNames  // If any files are to be included
       };
 
       console.log('Starting teacher voice chat with comprehensive payload:', payload);
