@@ -505,6 +505,28 @@ class PythonApiClient {
       throw error;
     }
   }
+
+  // NEW: Video presentation generation endpoint
+  async generateVideoPresentation(videoData) {
+    const formData = new FormData();
+    formData.append('pptx_file', videoData.pptx_file);
+    formData.append('voice_id', videoData.voice_id);
+    formData.append('talking_photo_id', videoData.talking_photo_id);
+    formData.append('title', videoData.title);
+
+    console.log('Sending video presentation request:', {
+      voice_id: videoData.voice_id,
+      talking_photo_id: videoData.talking_photo_id,
+      title: videoData.title,
+      file_name: videoData.pptx_file.name
+    });
+
+    return this.makeRequest('/video_presentation_endpoint', {
+      method: 'POST',
+      body: formData,
+      headers: {} // Let browser set Content-Type for FormData
+    });
+  }
 }
 
 export default new PythonApiClient(); 

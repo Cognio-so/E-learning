@@ -48,8 +48,10 @@ const useMediaStore = create(
         // Video
         video: {
             isGenerating: false,
+            isSaving: false, // Add saving state
             currentVideo: null,
-            saved: []
+            saved: [],
+            isLoadingSaved: false // Add loading state
         },
 
         // Web Search
@@ -705,31 +707,125 @@ const useMediaStore = create(
         // VIDEO ACTIONS
         // ==============================
 
+        // Initialize videos data from database
+        initializeVideos: async () => {
+            const { setVideoState, setError } = get()
+            try {
+                const response = await axiosInstance.get("/api/media/video");
+                if (response.status === 200) {
+                    setVideoState({ saved: response.data || [] });
+                }
+            } catch (error) {
+                console.error('Failed to initialize videos:', error);
+                setVideoState({ saved: [] }); // Set empty array on error
+            }
+        },
+
+        // Fetch all videos
+        fetchVideos: async () => {
+            const { setVideoState, setError } = get()
+            set({ isLoading: true, error: null });
+            try {
+                const response = await axiosInstance.get("/api/media/video");
+                if (response.status === 200) {
+                    setVideoState({ saved: response.data || [], isLoadingSaved: false });
+                    return response.data;
+                }
+            } catch (error) {
+                console.error('Failed to fetch videos:', error);
+                set({ 
+                    error: error.response?.data?.message || 'Failed to load videos',
+                    isLoading: false 
+                });
+                throw error;
+            }
+        },
+
         generateVideo: async (videoData) => {
             const { setVideoState, setError } = get()
             
             setVideoState({ isGenerating: true, error: null })
             
             try {
-                // Simulate video generation for now
-                // TODO: Implement actual video generation API
-                await new Promise(resolve => setTimeout(resolve, 3000))
+                // Call the Python API for video generation
+                const result = await PythonApi.generateVideoPresentation(videoData)
                 
-                const generatedVideo = {
-                    title: "Educational Video Created",
-                    duration: `${videoData.duration} seconds`,
-                    avatar: videoData.avatar,
-                    preview: "HD video with AI avatar and professional voiceover",
-                    gradeLevel: videoData.gradeLevel || '8' // Use auto-detected grade
+                if (result && result.video_url) {
+                    const generatedVideo = {
+                        title: result.title || "Educational Video Created",
+                        videoId: result.video_id,
+                        videoUrl: result.video_url,
+                        slidesCount: result.slides_count,
+                        preview: "AI-generated video presentation with slides and avatar",
+                        gradeLevel: videoData.gradeLevel || '8',
+                        type: 'video',
+                        createdAt: new Date().toISOString()
+                    }
+                    
+                    setVideoState({ currentVideo: generatedVideo })
+                    return generatedVideo
+                } else {
+                    throw new Error("No video URL received from server")
                 }
-                
-                setVideoState({ currentVideo: generatedVideo })
-                // Removed toast - let UI handle user feedback
             } catch (e) {
                 setError(e.message)
-                // Removed toast - let UI handle user feedback
+                throw e
             } finally {
                 setVideoState({ isGenerating: false })
+            }
+        },
+
+        saveVideo: async (videoData) => {
+            const { setVideoState, setError } = get()
+            
+            setVideoState({ isSaving: true })
+            
+            try {
+                console.log('Saving video with data:', videoData);
+                
+                const response = await axiosInstance.post("/api/media/video", {
+                    videoUrl: videoData.videoUrl,
+                    voiceId: videoData.voiceId,
+                    talkingPhotoId: videoData.talkingPhotoId
+                });
+
+                console.log('Backend response:', response.data);
+
+                if (response.status === 201) {
+                    const savedVideo = response.data;
+                    setVideoState(prev => ({ 
+                        saved: [savedVideo, ...prev.saved],
+                        currentVideo: null, // Clear current video after save
+                        isSaving: false 
+                    }))
+                    return savedVideo;
+                }
+            } catch (error) {
+                console.error('Save video error:', error);
+                console.error('Error response:', error.response?.data);
+                const errorMessage = error.response?.data?.message || 'Failed to save video';
+                setError(errorMessage)
+                throw error;
+            } finally {
+                setVideoState({ isSaving: false })
+            }
+        },
+
+        deleteVideo: async (videoId) => {
+            const { setVideoState, setError } = get()
+            
+            try {
+                const response = await axiosInstance.delete(`/api/media/video/${videoId}`);
+
+                if (response.status === 200) {
+                    setVideoState(prev => ({ saved: prev.saved.filter(v => v._id !== videoId) }))
+                    return true;
+                }
+            } catch (error) {
+                console.error('Delete video error:', error);
+                const errorMessage = error.response?.data?.message || 'Failed to delete video';
+                setError(errorMessage)
+                throw error;
             }
         },
 

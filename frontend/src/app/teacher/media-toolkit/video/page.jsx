@@ -1,201 +1,310 @@
 'use client'
 import React, { useState } from "react"
-import { Video, RefreshCw, Volume2, Mic, Play, Download } from "lucide-react"
+import { Video, RefreshCw, Volume2, Upload, FileText, User, Play, Download, Save } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
+import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Slider } from "@/components/ui/slider"
-import { Switch } from "@/components/ui/switch"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 
 import useMediaStore from "@/store/useMediaStore"
 import useAuthStore from "@/store/useAuthStore"
+import { voiceIds, talkingImages } from "@/config/data"
+import PythonApi from "@/lib/PythonApi"
 
 const VideoCreator = ({ setGeneratedContent }) => {
   const { user } = useAuthStore()
+  const { setVideoState, saveVideo } = useMediaStore()
 
   const [videoData, setVideoData] = useState({
-    script: "",
-    avatar: "",
-    voiceEmotion: "",
-    backgroundScene: "",
-    animationStyle: "",
-    quality: "1080p",
-    duration: 60,
-    autoGenerateScript: true
+    pptxFile: null,
+    voiceId: "",
+    talkingPhotoId: ""
   })
   const [isGenerating, setIsGenerating] = useState(false)
+  const [isSaving, setIsSaving] = useState(false)
+  const [uploadStatus, setUploadStatus] = useState("")
+  const [generatedVideo, setGeneratedVideo] = useState(null)
+
+  const handleFileUpload = (event) => {
+    const file = event.target.files[0]
+    if (file && file.type === "application/vnd.openxmlformats-officedocument.presentationml.presentation") {
+      setVideoData({...videoData, pptxFile: file})
+      setUploadStatus(`Selected: ${file.name}`)
+    } else {
+      setUploadStatus("Please select a valid PowerPoint (.pptx) file")
+    }
+  }
 
   const handleGenerate = async () => {
+    if (!videoData.pptxFile || !videoData.voiceId || !videoData.talkingPhotoId) {
+      setUploadStatus("Please fill in all required fields")
+      return
+    }
+
     setIsGenerating(true)
-    setTimeout(() => {
-      setGeneratedContent(prev => ({
-        ...prev,
-        video: {
-          title: "Educational Video Created",
-          duration: `${videoData.duration} seconds`,
-          avatar: videoData.avatar,
-          preview: "HD video with AI avatar and professional voiceover",
-          gradeLevel: user?.grade || '' // Use teacher's grade automatically
+    setUploadStatus("Creating video presentation...")
+
+    try {
+      const formData = new FormData()
+      formData.append('pptx_file', videoData.pptxFile)
+      formData.append('voice_id', videoData.voiceId)
+      formData.append('talking_photo_id', videoData.talkingPhotoId)
+      formData.append('title', videoData.pptxFile.name.replace('.pptx', ''))
+
+      const result = await PythonApi.generateVideoPresentation({
+        pptx_file: videoData.pptxFile,
+        voice_id: videoData.voiceId,
+        talking_photo_id: videoData.talkingPhotoId,
+        title: videoData.pptxFile.name.replace('.pptx', '')
+      })
+
+      if (result && result.video_url) {
+        const videoResult = {
+          title: result.title || "Video Presentation Created",
+          videoId: result.video_id,
+          videoUrl: result.video_url,
+          slidesCount: result.slides_count,
+          preview: "AI-generated video presentation with slides and avatar",
+          gradeLevel: user?.grade || '',
+          type: 'video',
+          createdAt: new Date().toISOString(),
+          voiceId: videoData.voiceId,
+          talkingPhotoId: videoData.talkingPhotoId,
+          subject: "General", // You might want to add subject selection
+          language: "English"
         }
-      }))
+
+        setGeneratedVideo(videoResult)
+        setVideoState({ currentVideo: videoResult })
+        
+        if (setGeneratedContent) {
+          setGeneratedContent(prev => ({
+            ...prev,
+            video: videoResult
+          }))
+        }
+
+        setUploadStatus("Video presentation created successfully!")
+      } else {
+        setUploadStatus("Error: No video URL received from server")
+      }
+    } catch (error) {
+      console.error('Video generation error:', error)
+      setUploadStatus("Error: " + error.message)
+    } finally {
       setIsGenerating(false)
-    }, 3000)
+    }
+  }
+
+  const handleSave = async () => {
+    if (!generatedVideo) {
+      setUploadStatus("No video to save")
+      return
+    }
+
+    setIsSaving(true)
+    setUploadStatus("Saving video...")
+
+    try {
+      await saveVideo({
+        videoUrl: generatedVideo.videoUrl,
+        voiceId: generatedVideo.voiceId,
+        talkingPhotoId: generatedVideo.talkingPhotoId
+      })
+      setUploadStatus("Video saved successfully!")
+      setGeneratedVideo(null) // Clear the generated video after saving
+    } catch (error) {
+      console.error('Save video error:', error)
+      setUploadStatus("Error saving video: " + error.message)
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const handleDownload = () => {
+    if (generatedVideo?.videoUrl) {
+      const link = document.createElement('a')
+      link.href = generatedVideo.videoUrl
+      link.download = `${generatedVideo.title}.mp4`
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+    }
   }
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <Label htmlFor="autoScript">Script Auto-Generation</Label>
-            <Switch
-              checked={videoData.autoGenerateScript}
-              onCheckedChange={(checked) => setVideoData({...videoData, autoGenerateScript: checked})}
-            />
-          </div>
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Video className="h-5 w-5" />
+            PowerPoint to Video Presentation
+          </CardTitle>
+          <CardDescription>
+            Upload a PowerPoint presentation and convert it to an AI-generated video with avatar and voice
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="space-y-4">
+              {/* PPTX File Upload */}
+              <div>
+                <Label htmlFor="pptx-upload" className="flex items-center gap-2">
+                  <FileText className="h-4 w-4" />
+                  PowerPoint File (.pptx)
+                </Label>
+                <Input
+                  id="pptx-upload"
+                  type="file"
+                  accept=".pptx"
+                  onChange={handleFileUpload}
+                  className="mt-2"
+                />
+                {uploadStatus && (
+                  <p className="text-sm text-muted-foreground mt-1">{uploadStatus}</p>
+                )}
+              </div>
+            </div>
 
-          <div>
-            <Label htmlFor="script">Video Script</Label>
-            <Textarea
-              id="script"
-              placeholder={videoData.autoGenerateScript ? "Script will be auto-generated based on your topic..." : "Enter your video script..."}
-              value={videoData.script}
-              onChange={(e) => setVideoData({...videoData, script: e.target.value})}
-              disabled={videoData.autoGenerateScript}
-              className="mt-2 min-h-32"
-            />
-          </div>
+            <div className="space-y-4">
+              {/* Voice and Avatar Selection in single row */}
+              <div className="flex gap-4">
+                {/* Voice ID Selection */}
+                <div className="flex-1">
+                  <Label htmlFor="voice-id" className="flex items-center gap-2">
+                    <Volume2 className="h-4 w-4" />
+                    Voice Selection
+                  </Label>
+                  <Select value={videoData.voiceId} onValueChange={(value) => setVideoData({...videoData, voiceId: value})}>
+                    <SelectTrigger className="mt-2">
+                      <SelectValue placeholder="Select voice" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {voiceIds.map((voice) => (
+                        <SelectItem key={voice.voice_id} value={voice.voice_id}>
+                          {voice.name} ({voice.gender})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
 
-          <div>
-            <Label htmlFor="avatar">3D Avatar Selection</Label>
-            <Select value={videoData.avatar} onValueChange={(value) => setVideoData({...videoData, avatar: value})}>
-              <SelectTrigger className="mt-2">
-                <SelectValue placeholder="Choose an avatar" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="teacher-female">Female Teacher</SelectItem>
-                <SelectItem value="teacher-male">Male Teacher</SelectItem>
-                <SelectItem value="scientist">Scientist</SelectItem>
-                <SelectItem value="historian">Historian</SelectItem>
-                <SelectItem value="mathematician">Mathematician</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div>
-            <Label htmlFor="voiceEmotion">Voice Emotion Settings</Label>
-            <Select value={videoData.voiceEmotion} onValueChange={(value) => setVideoData({...videoData, voiceEmotion: value})}>
-              <SelectTrigger className="mt-2">
-                <SelectValue placeholder="Select voice emotion" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="enthusiastic">Enthusiastic</SelectItem>
-                <SelectItem value="calm">Calm & Professional</SelectItem>
-                <SelectItem value="friendly">Friendly</SelectItem>
-                <SelectItem value="authoritative">Authoritative</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-
-        <div className="space-y-4">
-          <div>
-            <Label htmlFor="background">Background Scenes</Label>
-            <Select value={videoData.backgroundScene} onValueChange={(value) => setVideoData({...videoData, backgroundScene: value})}>
-              <SelectTrigger className="mt-2">
-                <SelectValue placeholder="Choose background" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="classroom">Classroom</SelectItem>
-                <SelectItem value="library">Library</SelectItem>
-                <SelectItem value="laboratory">Laboratory</SelectItem>
-                <SelectItem value="office">Modern Office</SelectItem>
-                <SelectItem value="nature">Nature/Outdoor</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div>
-            <Label htmlFor="animation">Animation Styles</Label>
-            <Select value={videoData.animationStyle} onValueChange={(value) => setVideoData({...videoData, animationStyle: value})}>
-              <SelectTrigger className="mt-2">
-                <SelectValue placeholder="Select animation style" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="slideshow">Slideshow Transitions</SelectItem>
-                <SelectItem value="kinetic">Kinetic Typography</SelectItem>
-                <SelectItem value="3d">3D Animations</SelectItem>
-                <SelectItem value="whiteboard">Whiteboard Style</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div>
-            <Label>Video Duration: {videoData.duration} seconds</Label>
-            <Slider
-              value={[videoData.duration]}
-              onValueChange={(value) => setVideoData({...videoData, duration: value[0]})}
-              min={30}
-              max={300}
-              step={15}
-              className="mt-2"
-            />
-          </div>
-
-          <div>
-            <Label htmlFor="quality">Quality Settings</Label>
-            <Select value={videoData.quality} onValueChange={(value) => setVideoData({...videoData, quality: value})}>
-              <SelectTrigger className="mt-2">
-                <SelectValue placeholder="Select quality" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="720p">720p HD</SelectItem>
-                <SelectItem value="1080p">1080p Full HD</SelectItem>
-                <SelectItem value="4k">4K Ultra HD</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div>
-            <Label>Professional Dubbing Integration</Label>
-            <div className="grid grid-cols-2 gap-2 mt-2">
-              <Button size="sm" variant="outline">
-                <Mic className="h-4 w-4 mr-1" />
-                Record Voice
-              </Button>
-              <Button size="sm" variant="outline">
-                <Volume2 className="h-4 w-4 mr-1" />
-                AI Voice
-              </Button>
+                {/* Talking Photo ID Selection */}
+                <div className="flex-1">
+                  <Label htmlFor="talking-photo-id" className="flex items-center gap-2">
+                    <User className="h-4 w-4" />
+                    Avatar Selection
+                  </Label>
+                  <Select value={videoData.talkingPhotoId} onValueChange={(value) => setVideoData({...videoData, talkingPhotoId: value})}>
+                    <SelectTrigger className="mt-2">
+                      <SelectValue placeholder="Select avatar" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {talkingImages.map((avatar) => (
+                        <SelectItem key={avatar.talking_photo_id} value={avatar.talking_photo_id}>
+                          {avatar.talking_photo_name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
             </div>
           </div>
-        </div>
-      </div>
 
-      <div className="flex gap-3">
-        <Button 
-          onClick={handleGenerate} 
-          disabled={!videoData.avatar || isGenerating}
-          className="flex-1 bg-gradient-to-r from-red-500 to-pink-600 hover:opacity-90 text-white"
-        >
-          {isGenerating ? (
-            <>
-              <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-              Creating Video...
-            </>
-          ) : (
-            <>
-              <Video className="h-4 w-4 mr-2" />
-              Create Video
-            </>
+          <div className="flex gap-3">
+            <Button 
+              onClick={handleGenerate} 
+              disabled={!videoData.pptxFile || !videoData.voiceId || !videoData.talkingPhotoId || isGenerating}
+              className="flex-1 bg-gradient-to-r from-red-500 to-pink-600 hover:opacity-90 text-white"
+            >
+              {isGenerating ? (
+                <>
+                  <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                  Creating Video...
+                </>
+              ) : (
+                <>
+                  <Video className="h-4 w-4 mr-2" />
+                  Create Video Presentation
+                </>
+              )}
+            </Button>
+          </div>
+
+          {/* Video Player Section */}
+          {generatedVideo && (
+            <Card className="mt-6">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Play className="h-5 w-5" />
+                  Generated Video
+                </CardTitle>
+                <CardDescription>
+                  Your AI-generated video presentation is ready
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="aspect-video bg-black rounded-xl shadow-lg overflow-hidden">
+                  <video 
+                    src={generatedVideo.videoUrl}
+                    className="w-full h-full object-contain"
+                    controls
+                    autoPlay={false}
+                    muted
+                    poster=""
+                  >
+                    Your browser does not support the video tag.
+                  </video>
+                </div>
+                
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="font-semibold text-lg">{generatedVideo.title}</h3>
+                    <p className="text-sm text-muted-foreground">
+                      {generatedVideo.slidesCount} slides • {generatedVideo.gradeLevel} grade level
+                    </p>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button 
+                      onClick={handleSave} 
+                      disabled={isSaving}
+                      className="bg-green-600 hover:bg-green-700 text-white"
+                    >
+                      {isSaving ? (
+                        <>
+                          <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                          Saving...
+                        </>
+                      ) : (
+                        <>
+                          <Save className="h-4 w-4 mr-2" />
+                          Save Video
+                        </>
+                      )}
+                    </Button>
+                    <Button onClick={handleDownload} variant="outline" size="sm">
+                      <Download className="h-4 w-4 mr-2" />
+                      Download
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
           )}
-        </Button>
-        <Button variant="outline">
-          <Volume2 className="h-4 w-4 mr-2" />
-          Preview Audio
-        </Button>
-      </div>
+
+          <div className="text-sm text-muted-foreground">
+            <p><strong>Note:</strong> This will convert your PowerPoint slides into a video presentation with:</p>
+            <ul className="list-disc list-inside mt-2 space-y-1">
+              <li>AI-generated speaker notes for each slide</li>
+              <li>Professional avatar presentation</li>
+              <li>High-quality voice synthesis</li>
+              <li>Slides as background images</li>
+            </ul>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   )
 }

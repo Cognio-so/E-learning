@@ -2,6 +2,7 @@ const WebSearch = require('../models/webSearchModel');
 const Image = require('../models/imageModel');
 const Comic = require('../models/comicModel');
 const Slide = require('../models/slideModel');
+const Video = require('../models/videoModel'); // Add video model
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
@@ -446,10 +447,86 @@ const deleteSlide = async (req, res) => {
     }
 }
 
+// Video CRUD operations
+const createVideo = async (req, res) => {
+    try {
+        if (req.user.role !== "teacher") {
+            return res.status(403).json({ message: "Unauthorized" });
+        }
+        
+        const { videoUrl, voiceId, talkingPhotoId } = req.body;
+        
+        if (!videoUrl || !voiceId || !talkingPhotoId) {
+            return res.status(400).json({ message: "Video URL, voice ID, and talking photo ID are required" });
+        }
+
+        const video = await Video.create({ 
+            videoUrl, 
+            voiceId, 
+            talkingPhotoId, 
+            createdBy: req.user.id
+        });
+
+        res.status(201).json(video);
+    } catch (error) {
+        console.error('Create video error:', error);
+        res.status(500).json({ message: "Internal server error" });
+    }
+};
+
+const fetchVideo = async (req, res) => {
+    try {
+        if (req.user.role !== "teacher") {
+            return res.status(403).json({ message: "Unauthorized - Teacher role required" });
+        }
+        
+        const videos = await Video.find({ createdBy: req.user.id }).sort({ createdAt: -1 });
+        res.status(200).json(videos);
+    } catch (error) {
+        console.error('Fetch video error:', error);
+        res.status(500).json({ message: "Internal server error" });
+    }
+};
+
+const getVideoById = async (req, res) => {
+    try {
+        const { id } = req.params;
+        if (!id) {
+            return res.status(400).json({ message: "ID is required" });
+        }
+        const video = await Video.findById(id);
+        if (!video) {
+            return res.status(404).json({ message: "Video not found" });
+        }
+        res.status(200).json(video);
+    } catch (error) {
+        console.error('Get video by ID error:', error);
+        res.status(500).json({ message: "Internal server error" });
+    }
+};
+
+const deleteVideo = async (req, res) => {
+    try {
+        if (req.user.role !== "teacher") {
+            return res.status(403).json({ message: "Unauthorized" });
+        }
+        const { id } = req.params;
+        const video = await Video.findByIdAndDelete(id);
+        if (!video) {
+            return res.status(404).json({ message: "Video not found" });
+        }
+        res.status(200).json({ message: "Video deleted successfully" });
+    } catch (error) {
+        console.error('Delete video error:', error);
+        res.status(500).json({ message: "Internal server error" });
+    }
+};
+
+// Update fetchMediaByStudent to include videos
 const fetchMediaByStudent = async (req, res) => {
     try {
         const { grade, subjects } = req.user;
-        const { type } = req.query; // 'image', 'comic', 'slide', 'web-search'
+        const { type } = req.query; // 'image', 'comic', 'slide', 'web-search', 'video'
         
         if (!grade || !subjects || subjects.length === 0) {
             return res.status(400).json({ 
@@ -485,6 +562,15 @@ const fetchMediaByStudent = async (req, res) => {
                 subject: { $in: subjects }
             }).sort({ createdAt: -1 });
             results.slides = slides;
+        }
+
+        // Fetch videos
+        if (!type || type === 'video') {
+            const videos = await Video.find({
+                grade: grade,
+                subject: { $in: subjects }
+            }).sort({ createdAt: -1 });
+            results.videos = videos;
         }
 
         // Fetch web searches
@@ -527,7 +613,11 @@ module.exports = {
     fetchSlide,
     getSlideById,
     deleteSlide,
+    createVideo,
+    fetchVideo,
+    getVideoById,
+    deleteVideo,
     fetchMediaByStudent,
-    upload, // Export the upload middleware
-    uploadComicImage // Add the new comic image upload function
+    upload,
+    uploadComicImage
 };

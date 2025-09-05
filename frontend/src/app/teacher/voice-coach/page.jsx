@@ -171,7 +171,7 @@ const VoiceCoach = () => {
                 studentPerformance: reportData?.performance || {},
                 studentOverview: reportData?.overview || {},
                 topPerformers: reportData?.topPerformers || [],
-                subjectPerformance: reportData?.subjects || [],
+                subjectPerformance: reportData?.subjects || {},
                 behaviorAnalysis: reportData?.behaviorAnalysis || {},
                 attendanceData: reportData?.attendance || {},
                 
@@ -380,13 +380,25 @@ const VoiceCoach = () => {
         }
     };
 
-    const handleUpload = () => {
+    const handleUpload = async () => {
         const fileInput = document.createElement('input');
         fileInput.type = 'file';
         fileInput.accept = '.pdf,.doc,.docx,.txt,.png,.jpg,.jpeg,.gif,.mp3,.mp4,.wav,.ogg,.webm,.zip,.rar,.7z,.tar,.gz,.bz2,.xlsx,.xls,.csv,.ppt,.pptx';
-        fileInput.onchange = (e) => {
-            const file = e.target.files[0];
-            console.log(file);
+        fileInput.multiple = true; // Allow multiple files
+        fileInput.onchange = async (e) => {
+            const files = Array.from(e.target.files);
+            if (files.length > 0 && sessionId) {
+                try {
+                    setIsLoading(true);
+                    await PythonApi.uploadDocumentsForChatbot(sessionId, files);
+                    toast.success(`Successfully uploaded ${files.length} document(s)`);
+                } catch (error) {
+                    console.error('Upload error:', error);
+                    toast.error('Failed to upload documents');
+                } finally {
+                    setIsLoading(false);
+                }
+            }
         };
         fileInput.click();
     };

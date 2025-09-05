@@ -42,6 +42,7 @@ from teaching_content_generation import run_generation_pipeline_async as generat
 from media_toolkit.slides_generation import SlideSpeakGenerator
 from media_toolkit.image_generation_model import ImageGenerator
 from media_toolkit.comics_generation import create_comical_story_prompt, generate_comic_image
+from media_toolkit.video_presentation_heygen import PPTXToHeyGenVideo
 
 
 # Import Tavily for web search in voice
@@ -1497,6 +1498,65 @@ async def teacher_voice_chat_endpoint(request: TeacherChatbotRequest):
     except Exception as e:
         logger.error(f"Error in chatbot endpoint: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+# ==============================
+# 10. VIDEO PRESENTATION ENDPOINT
+# ==============================
+
+@app.post("/video_presentation_endpoint", response_model=Dict[str, Any])
+async def video_presentation_endpoint(
+    pptx_file: UploadFile = File(...),
+    voice_id: str = Form(...),
+    talking_photo_id: str = Form(...),
+    title: str = Form(...)
+):
+    """
+    Generates a video presentation from PowerPoint using HeyGen API.
+    """
+    try:
+        logger.info(f"Video presentation request received: {title}")
+        logger.info(f"Voice ID: {voice_id}, Talking Photo ID: {talking_photo_id}")
+        
+        # Save uploaded file temporarily
+        import tempfile
+        import os
+        
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.pptx') as temp_file:
+            content = await pptx_file.read()
+            temp_file.write(content)
+            temp_file_path = temp_file.name
+        
+        try:
+            # Initialize the HeyGen video converter
+            converter = PPTXToHeyGenVideo(
+                pptx_avatar_id=talking_photo_id,
+                pptx_voice_id=voice_id
+            )
+            
+            # Convert the presentation to video
+            result = converter.convert(
+                pptx_path=temp_file_path,
+                title=title
+            )
+            
+            logger.info(f"Video generation completed: {result}")
+            
+            return {
+                "success": True,
+                "video_id": result.get("video_id"),
+                "video_url": result.get("video_url"),
+                "slides_count": result.get("slides_count"),
+                "title": title
+            }
+            
+        finally:
+            # Clean up temporary file
+            if os.path.exists(temp_file_path):
+                os.unlink(temp_file_path)
+                
+    except Exception as e:
+        logger.error(f"Error in video presentation endpoint: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Video generation failed: {str(e)}")
 
 # --- Uvicorn Server Runner ---
 if __name__ == "__main__":
