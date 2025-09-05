@@ -29,6 +29,8 @@ load_dotenv()
 
 # Chatbot imports - FIXED: Import from Student_AI_tutor instead of AI_tutor
 from Student_chatbot.Student_AI_tutor import AsyncRAGTutor, RAGTutorConfig
+from AI_tutor import TeacherAsyncRAGTutor, TeacherRAGTutorConfig
+
 
 # Assessment generation imports
 from assessment import create_question_generation_chain, generate_test_questions_async
@@ -87,7 +89,7 @@ try:
 
     # Initialize Tutor Sessions Dictionary
     tutor_sessions: Dict[str, AsyncRAGTutor] = {}
-    teacher_sessions: Dict[str, Dict[str, Any]] = {} # New: Dictionary to store teacher sessions
+    teacher_sessions: Dict[str, AsyncRAGTutor] = {} # New: Dictionary to store teacher sessions
 
     # Initialize other components
     slide_generator = SlideSpeakGenerator()
@@ -1026,6 +1028,14 @@ class TeacherBulkDataSchema(BaseModel):
     feedback_data: List[Dict[str, Any]] = Field([], description="Student feedback data")
     learning_analytics: Optional[Dict[str, Any]] = Field({}, description="Learning analytics data")
 
+class TeacherChatbotRequest(BaseModel):
+    session_id: str = Field(..., description="A unique identifier for the chat session. This maintains the context and knowledge base for the user.")
+    query: str = Field(..., description="The user's text query to the chatbot.")  # FIXED: Remove Optional, make required
+    history: List[Dict[str, Any]] = Field([], description="A list of previous messages in the chat history.")
+    teacher_data: TeacherBulkDataSchema
+    web_search_enabled: bool = Field(True, description="Enable or disable web search functionality for the tutor.")  # Changed default to True
+    uploaded_files: Optional[List[str]] = Field([], description="List of uploaded file names for context")
+
 @app.post("/teacher_bulk_data_endpoint")
 async def teacher_bulk_data_endpoint(schema: TeacherBulkDataSchema):
     """
@@ -1069,126 +1079,6 @@ class TeacherVoiceChatSchema(BaseModel):
     session_id: str = Field(..., description="Session identifier")
     teacher_data: TeacherBulkDataSchema
 
-@app.post("/teacher_voice_chat_endpoint")
-async def teacher_voice_chat_endpoint(schema: TeacherVoiceChatSchema):
-    """
-    Real-time text chat for teachers with streaming responses.
-    """
-    async def event_stream():
-        import json
-        
-        async def send(obj: dict):
-            yield f"data: {json.dumps(obj)}\n\n"
-
-        try:
-            # Get comprehensive teacher data from the schema
-            teacher_data = schema.teacher_data.model_dump()
-            teacher_name = teacher_data.get('teacher_name', 'Teacher')
-            teacher_id = teacher_data.get('teacher_id', 'Unknown')
-            
-            # Extract all the data
-            student_reports = teacher_data.get('student_details_with_reports', [])
-            student_performance = teacher_data.get('student_performance', {})
-            student_overview = teacher_data.get('student_overview', {})
-            top_performers = teacher_data.get('top_performers', [])
-            subject_performance = teacher_data.get('subject_performance', [])
-            behavior_analysis = teacher_data.get('behavior_analysis', {})
-            attendance_data = teacher_data.get('attendance_data', {})
-            
-            generated_content = teacher_data.get('generated_content_details', [])
-            assessment_details = teacher_data.get('assessment_details', [])
-            
-            media_toolkit = teacher_data.get('media_toolkit', {})
-            media_counts = teacher_data.get('media_counts', {})
-            
-            progress_data = teacher_data.get('progress_data', {})
-            feedback_data = teacher_data.get('feedback_data', [])
-            learning_analytics = teacher_data.get('learning_analytics', {})
-            
-            # Create comprehensive AI prompt for teacher assistance
-            prompt = f"""You are {teacher_name}'s personalized AI teaching assistant. Analyze their comprehensive teaching environment and provide actionable insights.
-
-TEACHER PROFILE:
-- Name: {teacher_name}
-- ID: {teacher_id}
-
-STUDENT DATA:
-- Total Students: {len(student_reports)} students
-- Performance Overview: {json.dumps(student_overview, indent=2) if student_overview else 'No overview data'}
-- Top Performers: {json.dumps(top_performers, indent=2) if top_performers else 'No top performers data'}
-- Subject Performance: {json.dumps(subject_performance, indent=2) if subject_performance else 'No subject data'}
-- Behavior Analysis: {json.dumps(behavior_analysis, indent=2) if behavior_analysis else 'No behavior data'}
-- Attendance: {json.dumps(attendance_data, indent=2) if attendance_data else 'No attendance data'}
-
-TEACHING CONTENT:
-- Generated Content: {len(generated_content)} items
-- Assessments: {len(assessment_details)} assessments
-- Content Details: {json.dumps([c.get('title', 'Untitled') for c in generated_content[:5]], indent=2) if generated_content else 'No content'}
-
-MEDIA TOOLKIT:
-- Comics: {media_counts.get('comics', 0)} items
-- Images: {media_counts.get('images', 0)} items  
-- Slides: {media_counts.get('slides', 0)} items
-- Videos: {media_counts.get('video', 0)} items
-- Web Search: {media_counts.get('webSearch', 0)} items
-
-PROGRESS & FEEDBACK:
-- Progress Data: {json.dumps(progress_data, indent=2) if progress_data else 'No progress data'}
-- Feedback Entries: {len(feedback_data)} feedback items
-- Learning Analytics: {json.dumps(learning_analytics, indent=2) if learning_analytics else 'No analytics'}
-
-Please provide a comprehensive analysis of:
-1. **Student Performance Patterns**: Identify trends, strengths, and areas needing improvement
-2. **Teaching Effectiveness**: Analyze your content generation and assessment strategies
-3. **Media Utilization**: How effectively you're using the media toolkit for teaching
-4. **Student Engagement**: Based on feedback and progress data
-5. **Professional Development**: Areas where you can enhance your teaching practice
-6. **Actionable Recommendations**: Specific steps to improve student outcomes
-
-Be professional, data-driven, and supportive. Focus on practical insights that can immediately improve teaching effectiveness."""
-
-            # Use AI_tutor to generate response
-            from AI_tutor import AsyncRAGTutor, RAGTutorConfig
-            
-            tutor_config = RAGTutorConfig.from_env()
-            tutor_config.web_search_enabled = True
-            
-            if schema.session_id not in teacher_tutor_sessions:
-                teacher_tutor_sessions[schema.session_id] = AsyncRAGTutor(storage_manager=storage_manager, config=tutor_config)
-            
-            tutor = teacher_tutor_sessions[schema.session_id]
-            tutor.update_web_search_status(True)
-            
-            # Generate streaming response
-            response_generator = tutor.run_agent_async(
-                query=prompt,
-                history=[],
-                image_storage_key=None,
-                is_knowledge_base_ready=(tutor.ensemble_retriever is not None),
-                uploaded_files=[],
-                teaching_data=teacher_data
-            )
-            
-            async for chunk in response_generator:
-                if chunk and chunk.strip():
-                    async for part in send({"type": "text_chunk", "content": chunk}):
-                        yield part
-            
-            async for part in send({"type": "done"}):
-                yield part
-
-        except Exception as e:
-            logger.error(f"Error in teacher voice chat: {e}", exc_info=True)
-            async for part in send({"type": "error", "message": str(e)}):
-                yield part
-
-    headers = {
-        "Cache-Control": "no-cache",
-        "Connection": "keep-alive", 
-        "Content-Type": "text/event-stream",
-        "X-Accel-Buffering": "no",
-    }
-    return StreamingResponse(event_stream(), headers=headers, media_type="text/event-stream")
 
 # NEW: TEACHER VOICE WEBSOCKET ENDPOINT
 
@@ -1449,28 +1339,137 @@ teacher_tutor_sessions: Dict[str, Any] = {}
 
 # Add teacher voice agent endpoint
 @app.post("/teacher_tutor_endpoint")
-async def teacher_tutor_endpoint(request: ChatbotRequest):
+async def teacher_tutor_chatbot_endpoint(request: TeacherChatbotRequest):
     """
-    Teacher-specific chatbot endpoint.
+    Handles interactions with the AI tutor with JSON-only requests.
+    Streaming text responses, no audio files.
+    Enhanced with student data for personalized learning.
     """
     try:
-        logger.info(f"Teacher tutor endpoint called with session_id: {request.session_id}")
-        
+        # Get comprehensive teacher data from the schema
+        teacher_data = request.teacher_data.model_dump()
+        teacher_name = teacher_data.get('teacher_name', 'Teacher')
+        teacher_id = teacher_data.get('teacher_id', 'Unknown')
+            
+        # Extract all the data
+        student_reports = teacher_data.get('student_details_with_reports', [])
+        student_performance = teacher_data.get('student_performance', {})
+        student_overview = teacher_data.get('student_overview', {})
+        top_performers = teacher_data.get('top_performers', [])
+        subject_performance = teacher_data.get('subject_performance', [])
+        behavior_analysis = teacher_data.get('behavior_analysis', {})
+        attendance_data = teacher_data.get('attendance_data', {})
+            
+        generated_content = teacher_data.get('generated_content_details', [])
+        assessment_details = teacher_data.get('assessment_details', [])
+            
+        media_toolkit = teacher_data.get('media_toolkit', {})
+        media_counts = teacher_data.get('media_counts', {})
+            
+        progress_data = teacher_data.get('progress_data', {})
+        feedback_data = teacher_data.get('feedback_data', [])
+        learning_analytics = teacher_data.get('learning_analytics', {})
+
+        logger.info(f"Chatbot endpoint called with session_id: {request.session_id}")
+        logger.info(f"Query: {request.query}")
+        logger.info(f"Teacher data: {request.teacher_data}")
+
         session_id = request.session_id
         
-        # For now, just return a basic response since AsyncTeacherTutor isn't implemented yet
+        # Get or create a tutor instance for the session
+        if session_id not in teacher_sessions:
+            logger.info(f"Creating new AI Tutor session: {session_id}")
+            teacher_config = TeacherRAGTutorConfig.from_env()
+            teacher_config.web_search_enabled = True  # Always enable web search
+            teacher_sessions[session_id] = TeacherAsyncRAGTutor(storage_manager=storage_manager, config=teacher_config)
+
+        tutor = teacher_sessions[session_id]
+
+        # Always enable web search for the tutor
+        tutor.update_web_search_status(True)
+
+        # --- Enhanced Query Processing with Student Data ---
+        if not request.query:
+            logger.error("No query provided in request")
+            raise HTTPException(status_code=400, detail="A 'query' is required.")
+
+        # Prepare enhanced context with student data
+        enhanced_query = request.query
+        enhanced_history = request.history.copy()
+        
+        # if request.teacher_data:
+        #     teacher_data = request.teacher_data
+
+            # Create personalized context based on teacher data
+        teacher_personalization_context = f"""
+        TEACHER PROFILE:
+        - Name: {teacher_name}
+        - ID: {teacher_id}
+
+        STUDENT DATA:
+        - Total Students: {len(student_reports)} students
+        - Performance Overview: {json.dumps(student_overview, indent=2) if student_overview else 'No overview data'}
+        - Top Performers: {json.dumps(top_performers, indent=2) if top_performers else 'No top performers data'}
+        - Subject Performance: {json.dumps(subject_performance, indent=2) if subject_performance else 'No subject data'}
+        - Behavior Analysis: {json.dumps(behavior_analysis, indent=2) if behavior_analysis else 'No behavior data'}
+        - Attendance: {json.dumps(attendance_data, indent=2) if attendance_data else 'No attendance data'}
+
+        TEACHING CONTENT:
+        - Generated Content: {len(generated_content)} items
+        - Assessments: {len(assessment_details)} assessments
+        - Content Details: {json.dumps([c.get('title', 'Untitled') for c in generated_content[:5]], indent=2) if generated_content else 'No content'}
+
+        MEDIA TOOLKIT:
+        - Comics: {media_counts.get('comics', 0)} items
+        - Images: {media_counts.get('images', 0)} items  
+        - Slides: {media_counts.get('slides', 0)} items
+        - Videos: {media_counts.get('video', 0)} items
+        - Web Search: {media_counts.get('webSearch', 0)} items
+
+        PROGRESS & FEEDBACK:
+        - Progress Data: {json.dumps(progress_data, indent=2) if progress_data else 'No progress data'}
+        - Feedback Entries: {len(feedback_data)} feedback items
+        - Learning Analytics: {json.dumps(learning_analytics, indent=2) if learning_analytics else 'No analytics'}
+            """
+            
+            # Add personalization context to the query
+        enhanced_query = f"""
+        {teacher_personalization_context}
+        You are {teacher_name}'s personalized AI teaching assistant. Use the above data to provide insights and support.
+        Student Query: {request.query}
+
+        """
+            
+        logger.info(f"Enhanced query with student data for {student_data.name} (Grade {student_data.grade})")
+        
+        is_kb_ready = tutor.ensemble_retriever is not None
+        
+        # FIXED: Pass all parameters including uploaded_files to match Student_AI_tutor.py run_agent_async signature
+        response_generator = tutor.run_agent_async(
+            query=enhanced_query,
+            history=enhanced_history,
+            image_storage_key=None,  # No image upload in this flow
+            is_knowledge_base_ready=is_kb_ready,
+            uploaded_files=request.uploaded_files,
+            student_details=request.student_data.model_dump() if request.student_data else None
+        )
+
         async def event_stream():
             import json
             async def send(obj: dict):
                 yield f"data: {json.dumps(obj)}\n\n"
-            
             try:
-                await send({"type": "text_chunk", "content": "Teacher tutor endpoint is working. AsyncTeacherTutor implementation pending."})
-                await send({"type": "done"})
-                    
+                async for chunk in response_generator:
+                    if not chunk:
+                        continue
+                    async for part in send({"type": "text_chunk", "content": chunk}):
+                        yield part
+                async for part in send({"type": "done"}):
+                    yield part
             except Exception as e:
-                logger.error(f"Error in teacher tutor stream: {e}", exc_info=True)
-                await send({"type": "error", "message": str(e)})
+                logger.error(f"Error in chatbot stream: {e}", exc_info=True)
+                async for part in send({"type": "error", "message": str(e)}):
+                    yield part
 
         headers = {
             "Cache-Control": "no-cache",
@@ -1481,7 +1480,7 @@ async def teacher_tutor_endpoint(request: ChatbotRequest):
         return StreamingResponse(event_stream(), headers=headers, media_type="text/event-stream")
 
     except Exception as e:
-        logger.error(f"Error in teacher tutor endpoint: {e}", exc_info=True)
+        logger.error(f"Error in chatbot endpoint: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 # --- Uvicorn Server Runner ---

@@ -214,7 +214,7 @@ async def run_generation_pipeline_async(config: dict):
         raise Exception(f"Failed to initialize OpenAI LLM: {e}")
 
     # --- Process Additional AI Options ---
-    additional_options = config.get("additional_ai_options", [])
+    additional_options = config.get("additional_ai_options") or []
     options_instructions = []
     if not additional_options:
         options_instructions.append("- No additional AI options were selected.")
@@ -261,8 +261,11 @@ async def run_generation_pipeline_async(config: dict):
                     f"مصادر وأفكار تعليمية لـ {config['grade']} في مادة {config['subject']} "
                     f"لـ {content_type_ar} حول '{config['lesson_topic']}'"
                 )
-                if 'multimedia suggestion' in config.get('additional_ai_options', []):
+                # --- FIX STARTS HERE ---
+                # Safely check for 'multimedia suggestion' in additional_ai_options, handling the None case.
+                if 'multimedia suggestion' in (config.get('additional_ai_options') or []):
                     search_query += " تتضمن فيديوهات يوتيوب وصور"
+                # --- FIX ENDS HERE ---
                 if config.get('learning_objective', '') != 'Not specified':
                     search_query += f" مع هدف التعلم: '{config['learning_objective']}'"
             else: # Default to English
@@ -270,8 +273,11 @@ async def run_generation_pipeline_async(config: dict):
                     f"Teaching resources and ideas for a {config['grade']} {config['subject']} "
                     f"{config['content_type']} on '{config['lesson_topic']}'"
                 )
-                if 'multimedia suggestion' in config.get('additional_ai_options', []):
+                # --- FIX STARTS HERE ---
+                # Safely check for 'multimedia suggestion' in additional_ai_options, handling the None case.
+                if 'multimedia suggestion' in (config.get('additional_ai_options') or []):
                     search_query += " including youtube videos and images"
+                # --- FIX ENDS HERE ---
                 if config.get('learning_objective', '') != 'Not specified':
                     search_query += f" with the learning objective: '{config['learning_objective']}'"
 

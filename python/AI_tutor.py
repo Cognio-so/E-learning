@@ -1,3 +1,4 @@
+import sys
 import os
 import logging
 import base64
@@ -24,7 +25,8 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, ToolMessage
 from langchain_core.prompts import ChatPromptTemplate, PromptTemplate
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
-from langchain_community.vectorstores import Chroma
+
+
 
 # Add error handling for Qdrant imports
 try:
@@ -77,7 +79,7 @@ class OrchestratorState(TypedDict):
     action: Optional[str]
     image_generation_params: Optional[dict]
     teaching_data: Optional[dict]
-    history: Optional[list]
+    history: Optional[list] # MODIFICATION: Added to track conversation history
 
 # Define the action types
 class ActionType(str, Enum):
@@ -127,10 +129,20 @@ QDRANT_VECTOR_PARAMS = VectorParams(size=1536, distance=Distance.COSINE)
 CONTENT_PAYLOAD_KEY = "page_content"
 METADATA_PAYLOAD_KEY = "metadata"
 
-default_qdrant_url = os.getenv("QDRANT_URL", "http://localhost:6333")
+default_qdrant_url = os.getenv("QDRANT_URL", "https://10067e95-a74b-4089-8dc9-db01db8d01f5.eu-west-2-0.aws.cloud.qdrant.io:6333")
 default_qdrant_api_key = os.getenv("QDRANT_API_KEY")
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+# @tool
+# def general_conversation_tool(query: str) -> str:
+#     """
+#     Use this tool ONLY for simple, non-substantive conversational turns like 'hello', 'thanks', or 'how are you?'.
+#     You MUST NOT use this tool for any question that seeks information, facts, definitions, or explanations (e.g., 'what is X?', 'explain Y').
+#     For informational queries, you MUST use another tool or answer from your own knowledge. This tool's purpose is strictly for handling conversational pleasantries.
+#     """
+#     return "give relevant response to the user query and encourage user to ask questions and learn {chat_history}."
+
 
 def async_error_handler(func):
     """
@@ -165,31 +177,48 @@ class VectorStoreManager:
         self.config = config
         self.qdrant_client = None
         self.vector_store = None
+        
+        logging.info(f"VectorStoreManager: Initializing with embedding_model={self.config.embedding_model}")
+        logging.info(f"VectorStoreManager: QDRANT_AVAILABLE={QDRANT_AVAILABLE}")
+        
         self.embeddings = OpenAIEmbeddings(
             model=self.config.embedding_model,
             openai_api_key=self.config.openai_api_key
         )
+        
         if QDRANT_AVAILABLE:
+            logging.info(f"VectorStoreManager: Creating QdrantClient with url={self.config.qdrant_url}")
             self.qdrant_client = QdrantClient(
                 url=self.config.qdrant_url, 
                 api_key=self.config.qdrant_api_key,
                 timeout=20.0
             )
+            logging.info("VectorStoreManager: QdrantClient created successfully")
+        else:
+            logging.error("VectorStoreManager: QDRANT_AVAILABLE is False")
 
     async def initialize_collection(self):
         """Initializes the Qdrant collection, creating it if it doesn't exist."""
+        logging.info(f"Starting initialize_collection with qdrant_client: {self.qdrant_client is not None}")
+        
         if not self.qdrant_client:
             logging.error("Qdrant client not available.")
-            return
+            self.vector_store = None
+            return False
 
         target_collection = self.config.qdrant_collection_name
+        logging.info(f"Target collection: {target_collection}")
+        
         if not target_collection:
             logging.error("Qdrant collection name is not set.")
+            self.vector_store = None
             raise ValueError("Cannot initialize collection without a name.")
             
         try:
+            logging.info("Getting collections from Qdrant...")
             collections = await asyncio.to_thread(self.qdrant_client.get_collections)
             collection_names = [col.name for col in collections.collections]
+            logging.info(f"Existing collections: {collection_names}")
 
             if target_collection not in collection_names:
                 logging.info(f"Creating Qdrant collection: {target_collection}")
@@ -198,7 +227,11 @@ class VectorStoreManager:
                     collection_name=target_collection,
                     vectors_config=QDRANT_VECTOR_PARAMS
                 )
+                logging.info(f"Collection {target_collection} created successfully")
+            else:
+                logging.info(f"Collection {target_collection} already exists")
             
+            logging.info("Creating QdrantVectorStore...")
             self.vector_store = QdrantVectorStore(
                 client=self.qdrant_client,
                 collection_name=target_collection,
@@ -207,9 +240,11 @@ class VectorStoreManager:
                 metadata_payload_key=METADATA_PAYLOAD_KEY
             )
             logging.info(f"Vector store initialized for collection: {target_collection}")
+            return True
 
         except Exception as e:
             logging.error(f"Failed to initialize Qdrant collection: {e}")
+            self.vector_store = None
             raise
             
     def get_retriever(self, k: int):
@@ -256,11 +291,11 @@ class TutorState(TypedDict):
     messages: Annotated[list, add_messages]
 
 @dataclass
-class RAGTutorConfig:
+class TeacherRAGTutorConfig:
     """Configuration class for the AI Tutor."""
     openai_api_key: str = os.getenv("OPENAI_API_KEY")
     google_api_key: str = os.getenv("GOOGLE_API_KEY")
-    llm_model: str = "gpt-4o"
+    llm_model: str = "gpt-4o"  # Default to OpenAI's GPT-4o-mini
     streaming: bool = True
     temperature: float = 0.2
     max_tokens: int = 2000
@@ -273,8 +308,9 @@ class RAGTutorConfig:
     qdrant_url: str = field(default_factory=lambda: default_qdrant_url)
     qdrant_api_key: Optional[str] = field(default_factory=lambda: default_qdrant_api_key)
     qdrant_collection_name: Optional[str] = None
-    web_search_enabled: bool = False
+    web_search_enabled: bool = True
     
+    # MODIFICATION: Split the system prompt into initial and follow-up versions.
     initial_system_prompt: str = """You are an expert AI Assistant for educators. Your primary role is to support teachers by analyzing student performance data, enhancing lesson materials, and providing pedagogical insights.
 ** reply in the language in which teacher interact **
 **Teaching Data Schema:**
@@ -327,14 +363,14 @@ Your ultimate goal is to empower the teacher to be more effective and efficient.
 """
 
     @classmethod
-    def from_env(cls) -> 'RAGTutorConfig':
+    def from_env(cls) -> 'TeacherRAGTutorConfig':
         """Create configuration from environment variables."""
         return cls()
 
-class AsyncRAGTutor:
-    def __init__(self, storage_manager: Any, config: Optional[RAGTutorConfig] = None):
-        self.config = config or RAGTutorConfig()
-        
+class TeacherAsyncRAGTutor:
+    def __init__(self, storage_manager: Any, config: Optional[TeacherRAGTutorConfig] = None):
+        self.config = config or TeacherRAGTutorConfig()
+
         unique_id = datetime.now().strftime("%Y%m%d%H%M%S%f")
         self.config.qdrant_collection_name = f"rag_session_{unique_id}"
         logging.info(f"Initialized new tutor instance with collection: {self.config.qdrant_collection_name}")
@@ -351,7 +387,7 @@ class AsyncRAGTutor:
         except Exception as e:
             logging.error(f"Error initializing ChatOpenAI: {e}")
             self.llm = ChatGoogleGenerativeAI(
-                model="gemini-1.5-flash-latest",
+                model="gemini-2.5-flash-lite",
                 temperature=self.config.temperature,
                 max_tokens=self.config.max_tokens,
                 google_api_key=self.config.google_api_key,
@@ -365,9 +401,10 @@ class AsyncRAGTutor:
             func=self.knowledge_base_retrieval_tool,
             coroutine=self.knowledge_base_retrieval_tool,
             description=(
-                "Use this tool to answer questions about any uploaded documents (generated_content), including text, PDFs, and images. "
-                "This is your primary tool for retrieving information to enhance or explain the teacher's content. "
-                "If the teacher's query mentions a specific filename or asks to improve their lesson plan, you MUST use this tool."
+                "Use this tool to answer questions about any uploaded documents, including text, PDFs, and images. "
+                "This is your primary tool for retrieving information. If the user's query mentions a specific filename "
+                "(e.g., 'homework.pdf', 'diagram.png'), you MUST use this tool. It is the only way to access the "
+                "content of the files the user has provided."
             )
         )
         
@@ -376,6 +413,7 @@ class AsyncRAGTutor:
         if self.config.web_search_enabled:
             if os.getenv("PPLX_API_KEY"):
                 logging.info("Web search is enabled and PPLX_API_KEY is set.")
+                # Updated to use Perplexity 
                 websearch_tool = PerplexityWebSearchTool(
                     max_results=5, 
                     model="sonar", 
@@ -388,6 +426,7 @@ class AsyncRAGTutor:
         self.tool_map = {tool.name: tool for tool in self.tools}
         self.llm_with_tools = self.llm.bind_tools(self.tools)
         
+        # Create an image generation tool node (will be used in the LangGraph)
         self.image_generation_tool = ToolNode(
             name="image_generator",
             tools=[image_generation_tool]
@@ -410,17 +449,21 @@ class AsyncRAGTutor:
 **Instructions:**
 1.  **Handle Conversational Fillers First:** If the `Follow-up Question` is a simple, common conversational phrase (e.g., "okay", "great", "thanks"), your most important task is to return it **UNCHANGED**. This rule overrides all others.
 
-2.  **Handle Visual Follow-ups:** If the `Follow-up Question` is a request for a visual representation (e.g., "explain with a diagram," "can you draw that?," "show me a chart"), you MUST combine it with the main topic from the `Chat History` to create a complete, actionable command for an image generator.
+2.  **Handle Visual Follow-ups:** If the `Follow-up Question` is a request for a visual representation (e.g., "explain with a diagram," "can you draw that?," "show me a chart", "generate an image"), you MUST combine it with the main topic from the `Chat History` to create a complete, actionable command for an image generator.
     - **Example 1:**
         - Chat History: User: "What is the water cycle?"
         - Follow-up Question: "Can you explain it with a diagram?"
         - Standalone Question: "Generate a diagram that explains the water cycle."
+    - **Example 2:**
+        - Chat History: AI: "Let's focus on helping you strengthen your understanding of linear equations in two variables..."
+        - Follow-up Question: "generate an image"
+        - Standalone Question: "Generate an image that explains linear equations in two variables for a 10th-grade student."
 
 3.  **Handle Uploaded Files:** If the question is NOT a filler or a visual follow-up AND the `Chat History` contains a `System Note` listing uploaded files, you MUST rewrite the `Follow-up Question` to be specifically about those files, including the filename(s).
     - **Example for documents:**
-        - System Note: The user has just uploaded 'lesson_plan_ch3.pdf'.
-        - Follow-up Question: can you improve this?
-        - Standalone Question: Can you improve the content of the document 'lesson_plan_ch3.pdf'?
+        - System Note: The user has just uploaded 'homework_chapter_3.pdf'.
+        - Follow-up Question: can you explain this?
+        - Standalone Question: Can you explain the content of the document 'homework_chapter_3.pdf'?
 
 4.  **General Rephrasing:** If the question is not covered by the rules above, use the chat history to create a clear, standalone question. If the original question is already perfectly standalone, return it as is.
 
@@ -433,6 +476,7 @@ class AsyncRAGTutor:
         )
         self.rephrase_chain = self.rephrase_prompt | self.llm | StrOutputParser()
         
+        # Router prompt for the orchestrator
         self.router_prompt = ChatPromptTemplate.from_messages([
             ("system", """You are an intelligent router that determines which action to take based on user input.
             
@@ -482,11 +526,13 @@ For regular queries that don't need image generation, simply respond with "use_l
         self.config.web_search_enabled = web_search_enabled
         logging.info(f"Updating web search status to: {self.config.web_search_enabled}")
 
+        # Check if the web search tool is currently in our list of tools
         websearch_tool_present = any(tool.name == 'perplexity_search' for tool in self.tools)
 
         if self.config.web_search_enabled and not websearch_tool_present:
             if os.getenv("PPLX_API_KEY"):
                 logging.info("Enabling and adding web search tool.")
+                # We instantiate the tool using the class from websearch_code.py
                 websearch_tool = PerplexityWebSearchTool(
                     max_results=5, 
                     model="sonar", 
@@ -495,12 +541,13 @@ For regular queries that don't need image generation, simply respond with "use_l
                 self.tools.append(websearch_tool)
             else:
                 logging.warning("Cannot enable web search: PPLX_API_KEY is not set.")
-                self.config.web_search_enabled = False
+                self.config.web_search_enabled = False # Ensure config reflects reality
 
         elif not self.config.web_search_enabled and websearch_tool_present:
             logging.info("Disabling and removing web search tool.")
             self.tools = [tool for tool in self.tools if tool.name != 'perplexity_search']
 
+        # CRITICAL: Re-create the tool map and re-bind the tools to the LLM
         self.tool_map = {tool.name: tool for tool in self.tools}
         self.llm_with_tools = self.llm.bind_tools(self.tools)
         logging.info(f"Tools updated. Current tools: {[tool.name for tool in self.tools]}")
@@ -532,6 +579,8 @@ For regular queries that don't need image generation, simply respond with "use_l
     async def initialize_vectorstore_async(self, documents: List[Document]):
         """Initialize the vector store with documents."""
         try:
+            logging.info("=== STARTING initialize_vectorstore_async ===")
+            
             if not documents:
                 logging.info("No documents to initialize vector store with.")
                 return False
@@ -540,26 +589,91 @@ For regular queries that don't need image generation, simply respond with "use_l
                 logging.warning("Qdrant is not available. Vector store will not be initialized.")
                 return False
 
+            logging.info(f"vectorstore_manager is None: {self.vectorstore_manager is None}")
+            
+            # FIXED: Check if we need to create the VectorStoreManager or just initialize the collection
             if self.vectorstore_manager is None:
                 if self.config.qdrant_collection_name is None:
                     timestamp = datetime.now().strftime("%Y%m%d%H%M%S%f")
                     self.config.qdrant_collection_name = f"rag_session_{timestamp}"
                 
-                config = {
-                    'url': self.config.qdrant_url,
-                    'api_key': self.config.qdrant_api_key,
-                    'collection_name': self.config.qdrant_collection_name
-                }
-                self.vectorstore_manager = VectorStoreManager(config)
-                await self.vectorstore_manager.initialize_collection()
-                logging.info(f"Vector store initialized for collection: {self.config.qdrant_collection_name}")
+                logging.info(f"Creating VectorStoreManager with collection: {self.config.qdrant_collection_name}")
+                
+                # FIXED: Use a simple class instead of type() to avoid attribute access issues
+                class VectorConfig:
+                    def __init__(self, config):
+                        self.embedding_model = config.embedding_model
+                        self.openai_api_key = config.openai_api_key
+                        self.qdrant_url = config.qdrant_url
+                        self.qdrant_api_key = config.qdrant_api_key
+                        self.qdrant_collection_name = config.qdrant_collection_name
+                
+                vector_config = VectorConfig(self.config)
+                
+                logging.info(f"VectorConfig created with embedding_model: {vector_config.embedding_model}")
+                logging.info(f"VectorConfig created with qdrant_url: {vector_config.qdrant_url}")
+                
+                try:
+                    logging.info("Creating VectorStoreManager...")
+                    self.vectorstore_manager = VectorStoreManager(vector_config)
+                    logging.info("VectorStoreManager created successfully")
+                except Exception as constructor_error:
+                    logging.error(f"Error creating VectorStoreManager: {constructor_error}")
+                    return False
+                
+                logging.info("Calling initialize_collection...")
+                try:
+                    # FIXED: Check the return value from initialize_collection
+                    init_success = await self.vectorstore_manager.initialize_collection()
+                    logging.info(f"initialize_collection returned: {init_success}")
+                    if not init_success:
+                        logging.error("Failed to initialize collection. Cannot proceed with document ingestion.")
+                        return False
+                        
+                    logging.info("initialize_collection completed successfully")
+                    logging.info(f"Vector store initialized for collection: {self.config.qdrant_collection_name}")
+                except Exception as init_error:
+                    logging.error(f"Exception during initialize_collection: {init_error}")
+                    return False
+            else:
+                logging.info("VectorStoreManager already exists, skipping creation")
             
+            # FIXED: Always check if vector_store is initialized, regardless of whether manager exists
+            logging.info(f"vector_store is None: {self.vectorstore_manager.vector_store is None}")
+            if self.vectorstore_manager.vector_store is None:
+                logging.info("Vector store is not initialized, calling initialize_collection...")
+                try:
+                    init_success = await self.vectorstore_manager.initialize_collection()
+                    logging.info(f"initialize_collection returned: {init_success}")
+                    if not init_success:
+                        logging.error("Failed to initialize collection. Cannot proceed with document ingestion.")
+                        return False
+                        
+                    logging.info("initialize_collection completed successfully")
+                    logging.info(f"Vector store initialized for collection: {self.config.qdrant_collection_name}")
+                except Exception as init_error:
+                    logging.error(f"Exception during initialize_collection: {init_error}")
+                    return False
+            else:
+                logging.info("Vector store is already initialized")
+                
+            # FIXED: Check if vector_store is actually initialized before proceeding
+            logging.info(f"Final check - vector_store is None: {self.vectorstore_manager.vector_store is None}")
+            if not self.vectorstore_manager.vector_store:
+                logging.error("Vector store is not initialized after initialize_collection call")
+                return False
+                
+            logging.info("Adding documents to vector store...")
             await self.vectorstore_manager.aadd_documents(documents)
+            logging.info("Documents added successfully")
             
+            logging.info("Getting retriever...")
             self.retriever = self.vectorstore_manager.get_retriever(k=self.config.retrieval_k)
+            logging.info("Retriever obtained successfully")
             
             if RETRIEVER_AVAILABLE:
                 try:
+                    logging.info("Setting up ensemble retriever...")
                     bm25_retriever = BM25Retriever.from_documents(
                         documents, preprocess_func=lambda text: text.split()
                     )
@@ -576,6 +690,7 @@ For regular queries that don't need image generation, simply respond with "use_l
             else:
                 self.ensemble_retriever = self.retriever
             
+            logging.info("=== COMPLETED initialize_vectorstore_async ===")
             return True
         except Exception as e:
             logging.error(f"Error initializing vector store: {e}")
@@ -631,6 +746,7 @@ For regular queries that don't need image generation, simply respond with "use_l
     async def _process_image_from_bytes_async(self, image_bytes: bytes, filename: str) -> Optional[str]:
         """
         Processes an image from bytes, generating a description using a vision model.
+        It first tries to use Google's Generative AI model and falls back to OpenAI's model on failure.
         """
         try:
             base64_image = base64.b64encode(image_bytes).decode('utf-8')
@@ -655,11 +771,13 @@ For regular queries that don't need image generation, simply respond with "use_l
                 return description
 
             except Exception as e_openai:
-                logging.error(f"Error using OpenAI's model for '{filename}': {e_openai}. Falling back to Google's model.")
+                logging.error(f"Error using OpenAI's model for '{filename}': {e_openai}. Falling back to OpenAI's model.")
+
+                # Fallback to OpenAI's model
                 try:
                     logging.info(f"Attempting to generate description for '{filename}' with Google's model.")
                     vision_model = ChatGoogleGenerativeAI(
-                    model="gemini-1.5-flash-latest",
+                    model="gemini-2.5-flash-lite",
                     max_tokens=self.config.max_tokens,
                     google_api_key=self.config.google_api_key,
                 )
@@ -678,6 +796,7 @@ For regular queries that don't need image generation, simply respond with "use_l
                     return None
 
         except Exception as e_initial:
+            # This catches errors in the initial setup (e.g., base64 encoding)
             logging.error(f"An initial error occurred while processing '{filename}': {e_initial}", exc_info=True)
             return None
             
@@ -714,6 +833,7 @@ For regular queries that don't need image generation, simply respond with "use_l
         return []
 
     @async_error_handler
+    # MODIFICATION: Added 'history' parameter to the method signature
     async def _agent_executor_stream_async(self, query: str, formatted_time: str, image_path: Optional[str] = None, is_knowledge_base_ready: bool = False, teaching_data: Optional[Dict[str, Any]] = None, history: Optional[List[Dict[str, Any]]] = None) -> AsyncGenerator[str, None]:
         """Private method to invoke the tool-enabled LLM with a finalized query."""
         teaching_data_str = "No teaching data provided. Please provide teacher name and student reports for analysis."
@@ -760,14 +880,21 @@ For regular queries that don't need image generation, simply respond with "use_l
         messages = [SystemMessage(content=system_prompt_text), HumanMessage(content=message_content)]
         ai_response_with_tool = await self.llm_with_tools.ainvoke(messages)
         
+
+        # **FIXED LOGIC STARTS HERE**
         if not ai_response_with_tool.tool_calls:
+            # Scenario 1: The LLM decided to answer directly.
+            # To ensure a consistent streaming experience, we will re-invoke the LLM
+            # in streaming mode to deliver the final answer.
             logging.info("LLM provided a direct answer without tool usage. Invoking a new stream for the response.")
             final_chain = self.llm | StrOutputParser()
+            # `messages` already contains the System and Human messages that led to this decision.
             async for chunk in final_chain.astream(messages):
                 yield chunk
             return
 
         messages.append(ai_response_with_tool)
+        # Scenario 2: The LLM decided to call one or more tools.
         for tool_call in ai_response_with_tool.tool_calls:
             tool_name = tool_call["name"]
             logging.info(f"LLM decided to call tool: {tool_name} with args {tool_call['args']}")
@@ -778,16 +905,19 @@ For regular queries that don't need image generation, simply respond with "use_l
                 tool_output = f"Error: Tool '{tool_name}' not found."
             messages.append(ToolMessage(content=str(tool_output), tool_call_id=tool_call["id"]))
 
+        # Now, invoke the model again with the tool results to get the final answer.
         final_chain = self.llm | StrOutputParser()
         async for chunk in final_chain.astream(messages):
             yield chunk
 
+    # Add this new method to create and parse the routing decision
     async def _route_query(self, query: str) -> dict:
         """Determine which action to take based on the user query."""
         try:
             router_response = await self.router_chain.ainvoke({"input": query})
             logging.info(f"Router response: {router_response}")
             
+            # Check if the response is a JSON object
             if router_response.strip().startswith("{") and router_response.strip().endswith("}"):
                 try:
                     parsed_response = json.loads(router_response)
@@ -799,39 +929,66 @@ For regular queries that don't need image generation, simply respond with "use_l
                 except json.JSONDecodeError:
                     logging.warning(f"Failed to parse JSON from router: {router_response}")
             
+            # If the response contains "generate_image" but isn't proper JSON, try to extract parameters
             if "generate_image" in router_response.lower():
+                # Simple regex-based extraction of parameters
                 parameters = {}
-                topic_match = re.search(r'topic["\s:]+([^",\n]+)', router_response)
-                if topic_match: parameters["topic"] = topic_match.group(1).strip()
-                grade_match = re.search(r'grade_level["\s:]+([^",\n]+)', router_response)
-                if grade_match: parameters["grade_level"] = grade_match.group(1).strip()
-                visual_match = re.search(r'preferred_visual_type["\s:]+([^",\n]+)', router_response)
-                if visual_match: parameters["preferred_visual_type"] = visual_match.group(1).strip()
-                subject_match = re.search(r'subject["\s:]+([^",\n]+)', router_response)
-                if subject_match: parameters["subject"] = subject_match.group(1).strip()
-                language_match = re.search(r'language["\s:]+([^",\n]+)', router_response)
-                if language_match: parameters["language"] = language_match.group(1).strip()
-                else: parameters["language"] = "English"
-                instructions_match = re.search(r'instructions["\s:]+([^",\n]+)', router_response)
-                if instructions_match: parameters["instructions"] = instructions_match.group(1).strip()
-                else: parameters["instructions"] = query
-                difficulty_match = re.search(r'difficulty_flag["\s:]+([^",\n]+)', router_response)
-                if difficulty_match: parameters["difficulty_flag"] = difficulty_match.group(1).strip()
-                else: parameters["difficulty_flag"] = "false"
                 
+                # Extract key parameters using regex patterns
+                topic_match = re.search(r'topic["\s:]+([^",\n]+)', router_response)
+                if topic_match:
+                    parameters["topic"] = topic_match.group(1).strip()
+                
+                grade_match = re.search(r'grade_level["\s:]+([^",\n]+)', router_response)
+                if grade_match:
+                    parameters["grade_level"] = grade_match.group(1).strip()
+                
+                visual_match = re.search(r'preferred_visual_type["\s:]+([^",\n]+)', router_response)
+                if visual_match:
+                    parameters["preferred_visual_type"] = visual_match.group(1).strip()
+                
+                subject_match = re.search(r'subject["\s:]+([^",\n]+)', router_response)
+                if subject_match:
+                    parameters["subject"] = subject_match.group(1).strip()
+                
+                language_match = re.search(r'language["\s:]+([^",\n]+)', router_response)
+                if language_match:
+                    parameters["language"] = language_match.group(1).strip()
+                else:
+                    parameters["language"] = "English"  # Default
+                
+                instructions_match = re.search(r'instructions["\s:]+([^",\n]+)', router_response)
+                if instructions_match:
+                    parameters["instructions"] = instructions_match.group(1).strip()
+                else:
+                    parameters["instructions"] = query  # Default to the query itself
+                
+                difficulty_match = re.search(r'difficulty_flag["\s:]+([^",\n]+)', router_response)
+                if difficulty_match:
+                    parameters["difficulty_flag"] = difficulty_match.group(1).strip()
+                else:
+                    parameters["difficulty_flag"] = "false"  # Default
+                
+                # Check if we extracted enough parameters
                 required_params = ["topic", "grade_level", "preferred_visual_type", "subject", "instructions"]
                 if all(param in parameters for param in required_params):
-                    return {"action": ActionType.GENERATE_IMAGE, "parameters": parameters}
+                    return {
+                        "action": ActionType.GENERATE_IMAGE,
+                        "parameters": parameters
+                    }
             
+            # Default action
             return {"action": ActionType.USE_LLM_WITH_TOOLS}
         
         except Exception as e:
             logging.error(f"Error in route_query: {e}")
-            return {"action": ActionType.USE_LLM_WITH_TOOLS}
+            return {"action": ActionType.USE_LLM_WITH_TOOLS}  # Default to standard LLM response
 
+    # Update the setup_langgraph_async method to implement the orchestrator
     async def setup_langgraph_async(self):
         """Set up the LangGraph orchestrator workflow asynchronously."""
         
+        # Router node function to decide which path to take
         async def router_node(state: OrchestratorState) -> dict:
             """Determine which action to take based on the user query."""
             last_message = state["messages"][-1]
@@ -842,17 +999,23 @@ For regular queries that don't need image generation, simply respond with "use_l
             else:
                 return {"action": ActionType.USE_LLM_WITH_TOOLS}
         
+        # LLM with tools node function
         async def llm_with_tools_node(state: OrchestratorState):
             """Process the query with the standard LLM and tools using streaming."""
             from langgraph.config import get_stream_writer
             
             last_message = state["messages"][-1]
+            # MODIFICATION: Get history from the state
             history = state.get("history", [])
             teaching_data = state.get("teaching_data")
-            
+
             formatted_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            
+            # Get the stream writer to send custom data
             writer = get_stream_writer()
             
+            # Stream each chunk as it comes in directly to the output stream
+            # MODIFICATION: Pass history to the agent executor
             async for chunk in self._agent_executor_stream_async(
                 query=last_message.content,
                 formatted_time=formatted_time,
@@ -860,10 +1023,13 @@ For regular queries that don't need image generation, simply respond with "use_l
                 teaching_data=teaching_data,
                 history=history
             ):
+                # Stream each chunk directly using the writer
                 writer(chunk)
             
+            # Return an empty AI message - the content has already been streamed
             return {"messages": [AIMessage(content="")]}
         
+        # Define the conditional edge function
         def route_by_action(state: OrchestratorState):
             """Route to the next node based on the action determined by the router."""
             action = state.get("action")
@@ -872,12 +1038,18 @@ For regular queries that don't need image generation, simply respond with "use_l
             else:
                 return "llm_with_tools"
         
+        # Define the LangGraph workflow
         workflow = StateGraph(OrchestratorState)
+        
+        # Add the nodes
         workflow.add_node("router", router_node)
         workflow.add_node("llm_with_tools", llm_with_tools_node)
         workflow.add_node("image_generator", image_generator_node)
+        
+        # Add edges
         workflow.add_edge(START, "router")
         workflow.add_conditional_edges("router", route_by_action)
+        # workflow.add_edge("llm_with_tools", END)
         workflow.add_edge("image_generator", END)
         workflow.add_edge("llm_with_tools", END)
         
@@ -885,6 +1057,7 @@ For regular queries that don't need image generation, simply respond with "use_l
         logging.info("LangGraph orchestrator workflow created successfully.")
         return self.graph
     
+    # Update run_agent_async to use astream instead of ainvoke
     @async_error_handler
     async def run_agent_async(self, query: str, history: List[Dict[str, Any]], image_storage_key: Optional[str] = None, is_knowledge_base_ready: bool = False, uploaded_files: Optional[List[str]] = None, teaching_data: Optional[Dict[str, Any]] = None) -> AsyncGenerator[str, None]:
         """Run the agent with a query and history, using the orchestrator graph with streaming."""
@@ -907,28 +1080,35 @@ For regular queries that don't need image generation, simply respond with "use_l
                 logging.error(f"Error handling image storage key {image_storage_key}: {e}")
 
         try:
+            # Initialize the graph if it hasn't been created yet
             if self.graph is None:
                 await self.setup_langgraph_async()
                 
+            # Process the query using the orchestrator graph
             logging.info(f"Processing query via orchestrator graph: {rephrased_query}")
             
+            # Invoke the graph with both system and user messages
             messages = [
                 SystemMessage(content="You are a helpful AI assistant."),
                 HumanMessage(content=rephrased_query)
             ]
             
+            # MODIFICATION: Pass the conversation history into the initial state
             initial_state = {
                 "messages": messages,
                 "teaching_data": teaching_data,
                 "history": history
             }
 
+            # Use astream with custom stream mode for streaming response
             is_image_response = False
             
+            # Use custom stream mode to get the streamed chunks
             async for chunk in self.graph.astream(
                 initial_state,
                 stream_mode="custom"
             ):
+                # Handle different chunk formats
                 if isinstance(chunk, dict) and "content" in chunk and "exclude_from_history" in chunk:
                     is_image_response = True
                     yield f"__IMAGE_RESPONSE__{chunk['content']}"
@@ -937,9 +1117,11 @@ For regular queries that don't need image generation, simply respond with "use_l
                 elif isinstance(chunk, str):
                     yield chunk
                 else:
+                    # Try to convert to string for other types
                     yield str(chunk)
                 
         finally:
+            # Clean up temporary files
             if temp_image_path and os.path.exists(temp_image_path):
                 try:
                     os.unlink(temp_image_path)
@@ -956,12 +1138,15 @@ For regular queries that don't need image generation, simply respond with "use_l
                 files_str = "', '".join(uploaded_files)
                 chat_history_str += f"System Note: The user has just uploaded the following file(s): '{files_str}'. The follow-up question likely refers to these files.\n\n"
             
-            for msg in reversed(history):
-                if msg.get("role", "") == "user":
-                    content = msg.get("content", "")
-                    if content and content != query:
-                        chat_history_str += f"User: {content}\n"
-                        break
+            # Only use the last user message from history
+            history_str_parts = []
+            # Capture the last few messages for better context
+            for msg in history[-4:]: # Takes the last 4 messages, for example
+                role = "AI" if msg.get("role") in ["assistant", "ai"] else "User"
+                content = msg.get("content", "")
+                history_str_parts.append(f"{role}: {content}")
+
+            chat_history_str = "\n".join(history_str_parts)
             
             rephrased = await self.rephrase_chain.ainvoke({
                 "chat_history": chat_history_str,
@@ -978,6 +1163,7 @@ For regular queries that don't need image generation, simply respond with "use_l
         if hasattr(self, 'executor'):
             self.executor.shutdown(wait=True)
 
+# Update the image_generation_tool node in setup_langgraph_async method
 async def image_generator_node(state: OrchestratorState):
     """Generate an image based on the parameters."""
     writer = get_stream_writer()
@@ -987,14 +1173,18 @@ async def image_generator_node(state: OrchestratorState):
             writer("Error: Missing image generation parameters.")
             return {"messages": [AIMessage(content="Error: Missing image generation parameters.")]}
             
+        # Stream status update
         writer("Generating image based on your specifications...")
             
         image_generator = ImageGenerator()
         image_base64 = image_generator.generate_image_from_schema(params)
         
         if image_base64:
+            # Create a markdown image that can be rendered in the chat
             image_md = f"![Generated Image](data:image/png;base64,{image_base64})"
+            # Stream the image
             writer({"content": image_md, "exclude_from_history": True})
+            # Add a flag to indicate this is an image response that shouldn't be stored in history
             return {"messages": [AIMessage(content=image_md)], "exclude_from_history": True}
         else:
             writer("Failed to generate image. Please check parameters and try again.")
@@ -1003,71 +1193,3 @@ async def image_generator_node(state: OrchestratorState):
         logging.error(f"Error in image_generator_node: {e}")
         writer(f"Error generating image: {str(e)}")
         return {"messages": [AIMessage(content=f"Error generating image: {str(e)}")]}
-
-class TeacherTutorConfig(RAGTutorConfig):
-    """Configuration class for the AI Teacher Tutor."""
-    
-    initial_system_prompt: str = """You are an expert AI Teaching Assistant. Your primary role is to support teachers by analyzing student performance data, enhancing lesson materials, and providing pedagogical insights.
-
-**Teacher Context:**
-{teacher_context}
-
-**Your Core Functions:**
-- **Data Analyst**: Analyze student performance data to identify patterns, strengths, and areas for improvement
-- **Content Enhancer**: Help improve lesson plans, worksheets, and teaching materials
-- **Pedagogical Partner**: Provide teaching strategies and classroom activity ideas
-- **Performance Insights**: Offer data-driven insights about student progress
-
-**How to Interact:**
-1. **Greet the teacher** by name and summarize your capabilities
-2. **Analyze student data** when requested
-3. **Enhance content** using the knowledge base retriever tool
-4. **Provide actionable insights** for teaching improvement
-
-**🕒 Current Time**: {current_time}
-"""
-
-class AsyncTeacherTutor(AsyncRAGTutor):
-    """AI Tutor specifically designed for teachers."""
-    
-    def __init__(self, storage_manager: Any, config: Optional[TeacherTutorConfig] = None):
-        super().__init__(storage_manager, config or TeacherTutorConfig())
-        self.teacher_context = {}
-    
-    def set_teacher_context(self, teacher_data: Dict[str, Any]):
-        """Set the teacher's context including student data and content."""
-        self.teacher_context = teacher_data
-    
-    async def run_teacher_agent_async(self, query: str, history: List[Dict[str, Any]], teacher_data: Optional[Dict[str, Any]] = None) -> AsyncGenerator[str, None]:
-        """Run the teacher agent with enhanced context."""
-        if teacher_data:
-            self.set_teacher_context(teacher_data)
-        
-        formatted_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        
-        # Use teacher-specific system prompt
-        system_prompt = self.config.initial_system_prompt.format(
-            current_time=formatted_time,
-            teacher_context=json.dumps(self.teacher_context, indent=2) if self.teacher_context else "No teacher context provided"
-        )
-        
-        # Create messages with teacher context
-        messages = [
-            SystemMessage(content=system_prompt),
-            HumanMessage(content=query)
-        ]
-        
-        # Add history if provided
-        if history:
-            for msg in history:
-                if msg.get("role") == "user":
-                    messages.append(HumanMessage(content=msg.get("content", "")))
-                elif msg.get("role") == "assistant":
-                    messages.append(AIMessage(content=msg.get("content", "")))
-        
-        # Process with tools
-        response = await self.llm_with_tools.ainvoke(messages)
-        
-        # Stream the response
-        async for chunk in self.llm.astream([response]):
-            yield chunk.content
