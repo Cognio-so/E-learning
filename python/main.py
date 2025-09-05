@@ -90,7 +90,7 @@ try:
 
     # Initialize Tutor Sessions Dictionary
     tutor_sessions: Dict[str, AsyncRAGTutor] = {}
-    teacher_sessions: Dict[str, AsyncRAGTutor] = {} # New: Dictionary to store teacher sessions
+    teacher_sessions: Dict[str, TeacherAsyncRAGTutor] = {} # New: Dictionary to store teacher sessions
 
     # Initialize other components
     slide_generator = SlideSpeakGenerator()
@@ -678,6 +678,61 @@ async def upload_documents_endpoint(session_id: str = Form(...), files: List[Upl
         raise
     except Exception as e:
         logger.error(f"Error in document upload endpoint: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+# NEW: Document upload endpoint for TEACHER chatbot
+@app.post("/teacher_upload_document_endpoint")
+async def teacher_upload_document_endpoint(session_id: str = Form(...), files: List[UploadFile] = File(...)):
+    """
+    Upload documents for the teacher's chatbot session to create a knowledge base.
+    """
+    try:
+        if not files:
+            raise HTTPException(status_code=400, detail="No files provided")
+
+        # Get or create a TEACHER tutor instance for the session
+        if session_id not in teacher_tutor_sessions:
+            logger.info(f"Creating new Teacher AI Tutor session for document upload: {session_id}")
+            teacher_config = TeacherRAGTutorConfig.from_env()
+            teacher_config.web_search_enabled = True  # Always enable web search
+            teacher_tutor_sessions[session_id] = TeacherAsyncRAGTutor(storage_manager=storage_manager, config=teacher_config)
+
+        tutor = teacher_tutor_sessions[session_id]
+
+        # Save files and get storage keys
+        storage_keys = []
+        for file in files:
+            if file.filename:
+                file_bytes = await file.read()
+                safe_filename = f"{uuid.uuid4()}_{file.filename}"
+
+                # Upload to cloud storage. These are for the KB, so is_user_doc=False
+                success, storage_key = await storage_manager.upload_file_async(file_bytes, safe_filename, is_user_doc=False)
+
+                if success:
+                    storage_keys.append(storage_key)
+                    logger.info(f"Uploaded file {file.filename} for teacher to cloud storage with key: {storage_key}")
+                else:
+                    logger.error(f"Failed to upload file {file.filename} for teacher to cloud storage.")
+
+        if storage_keys:
+            # Ingest documents into the teacher's tutor's knowledge base
+            success = await tutor.ingest_async(storage_keys)
+            if success:
+                return {
+                    "success": True,
+                    "message": f"Successfully uploaded and processed {len(storage_keys)} document(s) for the teacher's session",
+                    "files_processed": len(storage_keys)
+                }
+            else:
+                raise HTTPException(status_code=500, detail="Failed to process uploaded documents for the teacher's session")
+        else:
+            raise HTTPException(status_code=400, detail="No valid files were successfully uploaded")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in teacher document upload endpoint: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 # ==============================
@@ -1475,7 +1530,7 @@ async def teacher_voice_chat_endpoint(request: TeacherChatbotRequest):
             # Add personalization context to the query
         enhanced_query = f"""
         {teacher_personalization_context}
-        You are {teacher_name}'s personalized AI teaching assistant. Use the above data to provide insights and support.
+        You are {teacher_name}'s personalized AI teaching assistant.
         Teacher Query: {request.query}
 
         """
