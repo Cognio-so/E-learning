@@ -307,7 +307,7 @@ const ContentGeneratorPage = () => {
   const [instructionalDepth, setInstructionalDepth] = useState("standard");
   const [contentVersion, setContentVersion] = useState("standard");
   const [contentType, setContentType] = useState("lesson-plan");
-  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(true);
   const [isCopied, setIsCopied] = useState(false);
   const [isExported, setIsExported] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
@@ -315,6 +315,7 @@ const ContentGeneratorPage = () => {
   const [isGeneratingSlides, setIsGeneratingSlides] = useState(false);
   const [slideDialogOpen, setSlideDialogOpen] = useState(false);
   const [slideCount, setSlideCount] = useState(10);
+  const [slideTemplate, setSlideTemplate] = useState('default');
   const [presentationResult, setPresentationResult] = useState(null);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [editingContent, setEditingContent] = useState(null);
@@ -523,7 +524,8 @@ const ContentGeneratorPage = () => {
         content: generatedContent,
         topic: topic,
         slideCount: slideCount,
-        language: language
+        language: language,
+        template: slideTemplate
       };
 
       const result = await generateSlidesFromContent(slideData);
@@ -575,7 +577,7 @@ const ContentGeneratorPage = () => {
     } finally {
       setIsGeneratingSlides(false);
     }
-  }, [generatedContent, topic, slideCount, language, generateSlidesFromContent]);
+  }, [generatedContent, topic, slideCount, language, slideTemplate, generateSlidesFromContent]);
 
   const handleEditContent = (content) => {
     setEditingContent(content);
@@ -857,7 +859,7 @@ const ContentGeneratorPage = () => {
                     </div>
                     
                     <div className="space-y-2">
-                      <Label className="text-sm font-medium">Additional Options</Label>
+                      <Label className="text-sm font-medium">Choose options</Label>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <div className="flex items-center space-x-2 p-2 rounded-lg border">
                           <Checkbox
@@ -1009,6 +1011,29 @@ const ContentGeneratorPage = () => {
                   </div>
                   <p className="text-xs text-slate-500">Recommended: 10-15 slides for optimal presentation</p>
                 </div>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="slideTemplate" className="text-sm font-medium">Presentation Template</Label>
+                  <Select value={slideTemplate} onValueChange={setSlideTemplate}>
+                    <SelectTrigger className="h-11">
+                      <SelectValue placeholder="Select template..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="default">Default</SelectItem>
+                      <SelectItem value="aurora">Aurora</SelectItem>
+                      <SelectItem value="lavender">Lavender</SelectItem>
+                      <SelectItem value="monarch">Monarch</SelectItem>
+                      <SelectItem value="serene">Serene</SelectItem>
+                      <SelectItem value="iris">Iris</SelectItem>
+                      <SelectItem value="clyde">Clyde</SelectItem>
+                      <SelectItem value="adam">Adam</SelectItem>
+                      <SelectItem value="nebula">Nebula</SelectItem>
+                      <SelectItem value="bruno">Bruno</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-slate-500">Choose a visual style for your presentation</p>
+                </div>
+                
                 <DialogFooter className="pt-4">
                   <Button 
                     variant="ghost" 

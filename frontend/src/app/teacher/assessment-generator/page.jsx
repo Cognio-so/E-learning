@@ -700,7 +700,7 @@ export default function AssessmentBuilderPage() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="customPrompt" className="text-sm font-medium">Additional Instructions (Optional)</Label>
+                  <Label htmlFor="customPrompt" className="text-sm font-medium"> Instructions (Optional)</Label>
                   <Textarea 
                     id="customPrompt" 
                     value={form.customPrompt} 
@@ -1026,7 +1026,7 @@ export default function AssessmentBuilderPage() {
               </div>
 
               <div>
-                <Label htmlFor="editCustomPrompt">Additional Instructions</Label>
+                <Label htmlFor="editCustomPrompt"> Instructions</Label>
                 <Textarea
                   id="editCustomPrompt"
                   value={editingAssessment?.customPrompt || ''}

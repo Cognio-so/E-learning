@@ -195,14 +195,6 @@ const ImageGenerator = () => {
                 </SelectContent>
               </Select>
             </div>
-
-            <div className="flex items-center justify-between">
-              <Label htmlFor="difficulty">Advanced Detail</Label>
-              <Switch
-                checked={form.difficultyFlag}
-                onCheckedChange={(checked) => setForm({ ...form, difficultyFlag: checked })}
-              />
-            </div>
           </div>
         </div>
 

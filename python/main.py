@@ -27,7 +27,7 @@ load_dotenv()
 
 # --- Import functionalities from your scripts ---
 
-# Chatbot imports - FIXED: Import from Student_AI_tutor instead of AI_tutor
+# Chatbot imports
 from Student_chatbot.Student_AI_tutor import AsyncRAGTutor, RAGTutorConfig
 from AI_tutor import TeacherAsyncRAGTutor, TeacherRAGTutorConfig
 
@@ -383,6 +383,21 @@ Remember: You're not just answering questions - you're {student_name}'s dedicate
             await openai_ws.close()
         if openai_session:
             await openai_session.close()
+
+async def perform_web_search(query: str) -> str:
+    """Perform web search using Tavily client."""
+    try:
+        if tavily_client:
+            search_results = tavily_client.search(query, max_results=3)
+            formatted_results = []
+            for result in search_results.get('results', []):
+                formatted_results.append(f"Title: {result.get('title', '')}\nURL: {result.get('url', '')}\nContent: {result.get('content', '')}")
+            return "\n\n".join(formatted_results) if formatted_results else "No results found."
+        else:
+            return "Web search is not available at the moment."
+    except Exception as e:
+        logger.error(f"Error performing web search: {e}")
+        return f"Error performing search: {str(e)}"
 
 async def handle_openai_responses(openai_ws, client_ws):
     """Handle responses from OpenAI and forward to client."""
@@ -1338,22 +1353,22 @@ async def handle_teacher_openai_responses(openai_ws, client_ws):
 teacher_tutor_sessions: Dict[str, Any] = {}
 
 # Add teacher voice agent endpoint
-@app.post("/teacher_tutor_endpoint")
-async def teacher_tutor_chatbot_endpoint(request: TeacherChatbotRequest):
+@app.post("/teacher_voice_chat_endpoint")  
+async def teacher_voice_chat_endpoint(request: TeacherChatbotRequest):
     """
-    Handles interactions with the AI tutor with JSON-only requests.
+    Handles interactions with the AI tutor for teachers with JSON-only requests.
     Streaming text responses, no audio files.
-    Enhanced with student data for personalized learning.
+    Enhanced with teacher data for personalized teaching support.
     """
     try:
         # Get comprehensive teacher data from the schema
         teacher_data = request.teacher_data.model_dump()
-        teacher_name = teacher_data.get('teacher_name', 'Teacher')
-        teacher_id = teacher_data.get('teacher_id', 'Unknown')
+        teacher_name = teacher_data.get('teacherName', 'Teacher') or teacher_data.get('teacher_name', 'Teacher')
+        teacher_id = teacher_data.get('teacherId', 'Unknown') or teacher_data.get('teacher_id', 'Unknown')
             
-        # Extract all the data
-        student_reports = teacher_data.get('student_details_with_reports', [])
-        student_performance = teacher_data.get('student_performance', {})
+        # Extract all the data with proper structure
+        student_reports = teacher_data.get('students', []) or teacher_data.get('student_details_with_reports', [])
+        student_performance = teacher_data.get('studentPerformance', {}) or teacher_data.get('student_performance', {})
         student_overview = teacher_data.get('student_overview', {})
         top_performers = teacher_data.get('top_performers', [])
         subject_performance = teacher_data.get('subject_performance', [])
@@ -1376,14 +1391,14 @@ async def teacher_tutor_chatbot_endpoint(request: TeacherChatbotRequest):
 
         session_id = request.session_id
         
-        # Get or create a tutor instance for the session
-        if session_id not in teacher_sessions:
-            logger.info(f"Creating new AI Tutor session: {session_id}")
+        # Get or create a teacher tutor instance for the session
+        if session_id not in teacher_tutor_sessions:
+            logger.info(f"Creating new Teacher AI Tutor session: {session_id}")
             teacher_config = TeacherRAGTutorConfig.from_env()
             teacher_config.web_search_enabled = True  # Always enable web search
-            teacher_sessions[session_id] = TeacherAsyncRAGTutor(storage_manager=storage_manager, config=teacher_config)
+            teacher_tutor_sessions[session_id] = TeacherAsyncRAGTutor(storage_manager=storage_manager, config=teacher_config)
 
-        tutor = teacher_sessions[session_id]
+        tutor = teacher_tutor_sessions[session_id]
 
         # Always enable web search for the tutor
         tutor.update_web_search_status(True)
@@ -1436,11 +1451,11 @@ async def teacher_tutor_chatbot_endpoint(request: TeacherChatbotRequest):
         enhanced_query = f"""
         {teacher_personalization_context}
         You are {teacher_name}'s personalized AI teaching assistant. Use the above data to provide insights and support.
-        Student Query: {request.query}
+        Teacher Query: {request.query}
 
         """
             
-        logger.info(f"Enhanced query with student data for {student_data.name} (Grade {student_data.grade})")
+        logger.info(f"Enhanced query with teacher data for {teacher_name}")
         
         is_kb_ready = tutor.ensemble_retriever is not None
         
@@ -1451,7 +1466,7 @@ async def teacher_tutor_chatbot_endpoint(request: TeacherChatbotRequest):
             image_storage_key=None,  # No image upload in this flow
             is_knowledge_base_ready=is_kb_ready,
             uploaded_files=request.uploaded_files,
-            student_details=request.student_data.model_dump() if request.student_data else None
+            teaching_data=request.teacher_data.model_dump() if request.teacher_data else None
         )
 
         async def event_stream():
