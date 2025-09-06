@@ -9,7 +9,7 @@ const generateToken = (userId, role, email) => {
     };
     
     const accessToken = jwt.sign(payload, process.env.JWT_SECRET, { 
-        expiresIn: '15m' 
+        expiresIn: '1d' 
     });
     
     const refreshToken = jwt.sign(payload, process.env.JWT_SECRET, { 
@@ -30,12 +30,12 @@ const setCookies = (res, accessToken, refreshToken) => {
 
     res.cookie('accessToken', accessToken, {
         ...cookieOptions,
-        maxAge: 15 * 60 * 1000, 
+        maxAge: 24 * 60 * 60 * 1000, // 1 day to match token expiry
     });
 
     res.cookie('refreshToken', refreshToken, {
         ...cookieOptions,
-        maxAge: 7 * 24 * 60 * 60 * 1000, 
+        maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
     });
 }
 

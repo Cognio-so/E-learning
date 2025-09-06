@@ -40,7 +40,7 @@ const setupTokenManagement = (refreshTokenFn, clearAuthFn) => {
         refreshInterval = null;
     }
 
-    // Start automatic refresh every 10 minutes (before 15-minute expiry)
+    // Start automatic refresh every 23 hours (before 1 day expiry)
     refreshInterval = setInterval(async () => {
         try {
             await refreshTokenFn();
@@ -49,9 +49,9 @@ const setupTokenManagement = (refreshTokenFn, clearAuthFn) => {
             console.log('❌ Auto-refresh failed, logging out');
             clearAuthFn();
         }
-    }, 10 * 60 * 1000); // 10 minutes
+    }, 23 * 60 * 60 * 1000); // 23 hours
 
-    console.log('🔄 Token auto-refresh started (every 10 minutes)');
+    console.log('🔄 Token auto-refresh started (every 23 hours)');
 };
 
 const clearTokenManagement = () => {
