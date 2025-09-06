@@ -44,7 +44,9 @@ const Login = () => {
                 // This prevents middleware conflicts
                 const dashboardPath = result.user.role === 'student' 
                     ? '/student/dashboard' 
-                    : '/teacher/dashboard';
+                    : result.user.role === 'teacher'
+                    ? '/teacher/dashboard'
+                    : '/admin/dashboard';
                 
                 // Small delay to ensure state is updated
                 setTimeout(() => {

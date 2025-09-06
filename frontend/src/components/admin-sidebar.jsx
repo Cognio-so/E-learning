@@ -1,5 +1,5 @@
 "use client"
-import {  Home, Settings2Icon, BookOpen, LogOut, Sun, Moon, TableOfContents, ClipboardCheck, ToolCase, UsersRound, BarChart3, AudioLines } from "lucide-react"
+import {  Home, Settings2Icon, User, Users, BookOpen, Clock, GraduationCap, Shield, LogOut, Sun, Moon } from "lucide-react"
 import { ThemeToggle } from "./theme-toggle"
 import {
   Sidebar,
@@ -22,19 +22,41 @@ import { useCallback } from "react";
 import { useTheme } from "next-themes";
 import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
 
-const MENU_ITEMS = [ 
-  { title: "Dashboard", url: "/teacher/dashboard", icon: Home, }, 
-  { title: "Content-Generator", url: "/teacher/content-generator", icon: TableOfContents, },
-   { title: "Assessment-Generator", url: "/teacher/assessment-generator", icon: ClipboardCheck, }, 
-   { title: "Media-Toolkit", url: "/teacher/media-toolkit", icon: ToolCase, }, 
-   { title: "Library", url: "/teacher/library", icon: BookOpen, }, 
-   { title: "Class-Grouping", url: "/teacher/class-grouping", icon: UsersRound, }, 
-   { title: "Reports", url: "/teacher/reports", icon: BarChart3, }, 
-   { title: "Voice-Coach", url: "/teacher/voice-coach", icon: AudioLines, }, 
-   { title: "Settings", url: "/teacher/settings", icon: Settings2Icon, }, 
-];
+// Menu items.
+const items = [
+  {
+    title: "Dashboard",
+    url: "/admin/dashboard",
+    icon: Home,
+  },
+  {
+    title: "User Management",
+    url: "/admin/management",
+    icon: Users,
+  },
+  {
+    title: "Curriculum Management",
+    url: "/admin/curriculum",
+    icon: BookOpen,
+  },
+  {
+    title: "Classes & Subjects",
+    url: "/admin/classes-subjects",
+    icon: GraduationCap,
+  },
+  {
+    title: "History",
+    url: "/admin/history",
+    icon: Clock,
+  },
+  {
+    title: "Settings",
+    url: "/admin/settings",
+    icon: Settings2Icon,
+  },
+]
 
-export function TeacherSidebar() {
+export function AdminSidebar() {
   const { user, logout } = useAuthStore();
   const { state } = useSidebar();
   const { theme, setTheme } = useTheme();
@@ -61,7 +83,7 @@ export function TeacherSidebar() {
         <div className="flex items-center justify-between p-4">
           {/* Logo */}
           <div className="flex items-center gap-2">
-            <span className="text-2xl font-bold group-data-[collapsible=icon]:hidden">Teacher Panel</span>
+            <span className="text-2xl font-bold group-data-[collapsible=icon]:hidden">Admin Panel</span>
             <span className="text-xl font-bold hidden group-data-[collapsible=icon]:block">A</span>
           </div>
         </div>
@@ -71,7 +93,7 @@ export function TeacherSidebar() {
         <SidebarGroup className="px-2 mt-6">
           <SidebarGroupContent>
             <SidebarMenu className="space-y-2">
-              {MENU_ITEMS.map((item) => (
+              {items.map((item) => (
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton asChild tooltip={item.title}>
                     <Link href={item.url} className={`flex items-center gap-3 px-3 py-2 rounded-md hover:bg-accent ${
@@ -144,10 +166,10 @@ export function TeacherSidebar() {
           </Avatar>
           <div className="group-data-[collapsible=icon]:hidden min-w-0 flex-1">
             <p className="text-sm font-medium truncate">
-              {user?.name || "Teacher"}
+              {user?.name || "Admin"}
             </p>
             <p className="text-xs text-muted-foreground truncate">
-              {user?.email || "teacher@teacher.com"}
+              {user?.email || "admin@admin.com"}
             </p>
           </div>
         </div>

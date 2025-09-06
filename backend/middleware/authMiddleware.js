@@ -92,10 +92,14 @@ const requireRole = (roles) => {
 
 const requireStudent = requireRole(['student']);
 const requireTeacher = requireRole(['teacher']);
+const requireAdmin = requireRole(['admin']);
+const requireAdminOrTeacher = requireRole(['admin', 'teacher']);
 
 module.exports = {
     protectRoute,
     requireRole,
     requireStudent,
     requireTeacher,
+    requireAdmin,
+    requireAdminOrTeacher,
 };

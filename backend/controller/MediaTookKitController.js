@@ -3,17 +3,10 @@ const Image = require('../models/imageModel');
 const Comic = require('../models/comicModel');
 const Slide = require('../models/slideModel');
 const Video = require('../models/videoModel'); // Add video model
+const { uploadBufferToCloudinary } = require('../lib/cloudinary');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
-const cloudinary = require('cloudinary').v2;
-
-// Configure Cloudinary
-cloudinary.config({
-    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-    api_key: process.env.CLOUDINARY_API_KEY,
-    api_secret: process.env.CLOUDINARY_API_SECRET
-});
 
 // Configure multer for memory storage (for Cloudinary upload)
 const storage = multer.memoryStorage();
@@ -37,48 +30,12 @@ const upload = multer({
 
 // Helper function to upload image to Cloudinary
 const uploadToCloudinary = async (file) => {
-    try {
-        // Convert buffer to base64
-        const b64 = Buffer.from(file.buffer).toString('base64');
-        const dataURI = `data:${file.mimetype};base64,${b64}`;
-        
-        const result = await cloudinary.uploader.upload(dataURI, {
-            folder: 'ed-teach-images',
-            resource_type: 'auto',
-            transformation: [
-                { quality: 'auto:good' },
-                { fetch_format: 'auto' }
-            ]
-        });
-        
-        return result.secure_url;
-    } catch (error) {
-        console.error('Cloudinary upload error:', error);
-        throw new Error('Failed to upload image to Cloudinary');
-    }
+    return await uploadBufferToCloudinary(file, 'ed-teach-images');
 };
 
 // Helper function to upload comic image to Cloudinary
 const uploadComicImageToCloudinary = async (file) => {
-    try {
-        // Convert buffer to base64
-        const b64 = Buffer.from(file.buffer).toString('base64');
-        const dataURI = `data:${file.mimetype};base64,${b64}`;
-        
-        const result = await cloudinary.uploader.upload(dataURI, {
-            folder: 'ed-teach-comics', // Different folder for comics
-            resource_type: 'auto',
-            transformation: [
-                { quality: 'auto:good' },
-                { fetch_format: 'auto' }
-            ]
-        });
-        
-        return result.secure_url;
-    } catch (error) {
-        console.error('Cloudinary upload error:', error);
-        throw new Error('Failed to upload comic image to Cloudinary');
-    }
+    return await uploadBufferToCloudinary(file, 'ed-teach-comics');
 };
 
 // New endpoint for comic image uploads

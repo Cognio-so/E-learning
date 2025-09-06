@@ -14,6 +14,7 @@ const lessonRoutes = require('./routes/lessonRoute');
 const progressRoute = require('./routes/progressRoute');
 const chatRoutes = require("./routes/chatRoute");
 const feedbackRoutes = require('./routes/feedbackRoute');
+const adminRoute = require('./routes/adminRoute');
 
 const app = express();
 
@@ -44,6 +45,7 @@ app.use('/api/lessons', lessonRoutes);
 app.use('/api/progress', progressRoute);
 app.use('/api/chat', chatRoutes);
 app.use('/api/feedback', feedbackRoutes);
+app.use('/api/admin', adminRoute);
 
 app.use('/', (req, res) => {
     res.send("Hello World");    

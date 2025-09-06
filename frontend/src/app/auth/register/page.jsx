@@ -23,7 +23,11 @@ const Register = () => {
 
     useEffect(() => {
         if (isAuthenticated && user) {
-            const dashboardUrl = user.role === 'student' ? '/student/dashboard' : '/teacher/dashboard';
+            const dashboardUrl = user.role === 'student' 
+                ? '/student/dashboard' 
+                : user.role === 'teacher'
+                ? '/teacher/dashboard'
+                : '/admin/dashboard';
             router.push(dashboardUrl);
         }
     }, [isAuthenticated, user, router]);
