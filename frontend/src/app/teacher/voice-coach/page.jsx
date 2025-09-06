@@ -390,7 +390,7 @@ const VoiceCoach = () => {
             if (files.length > 0 && sessionId) {
                 try {
                     setIsLoading(true);
-                    await PythonApi.uploadDocumentsForChatbot(sessionId, files);
+                    await PythonApi.uploadDocumentsForTeacherChatbot(sessionId, files);
                     toast.success(`Successfully uploaded ${files.length} document(s)`);
                 } catch (error) {
                     console.error('Upload error:', error);
