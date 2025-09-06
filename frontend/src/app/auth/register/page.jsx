@@ -1,6 +1,6 @@
 'use client'
 import { Button } from "@/components/ui/button";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import useAuthStore from "@/store/useAuthStore";
 import { Loader2 } from "lucide-react";
@@ -11,7 +11,7 @@ import { Eye, EyeOff } from "lucide-react";
 
 const Register = () => {
     const router = useRouter();
-    const { register, isLoading, setIsLoading, isAuthenticated, user } = useAuthStore();
+    const { register, isLoading, setIsLoading } = useAuthStore();
     const [formData, setFormData] = useState({
         name: "",
         email: "",
@@ -20,17 +20,6 @@ const Register = () => {
         terms: false,
     });
     const [showPassword, setShowPassword] = useState(false);
-
-    useEffect(() => {
-        if (isAuthenticated && user) {
-            const dashboardUrl = user.role === 'student' 
-                ? '/student/dashboard' 
-                : user.role === 'teacher'
-                ? '/teacher/dashboard'
-                : '/admin/dashboard';
-            router.push(dashboardUrl);
-        }
-    }, [isAuthenticated, user, router]);
 
     const handleChange = (e) => {
         const { name, value, type, checked } = e.target;
@@ -80,10 +69,6 @@ const Register = () => {
             setIsLoading(false);
         }
     };
-
-    if (isAuthenticated) {
-        return null;
-    }
 
     return (
         <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
