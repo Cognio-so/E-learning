@@ -1,5 +1,7 @@
+'use client'
 import { Suspense, lazy } from "react";
 import { SidebarProvider } from "@/components/ui/sidebar";
+import ProtectedRoute from "@/components/protected-route";
 
 // Lazy load the sidebar component
 const TeacherSidebar = lazy(() => import("@/components/teacher-sidebar").then(mod => ({ default: mod.TeacherSidebar })));
@@ -20,12 +22,14 @@ const SidebarFallback = () => (
 
 const TeacherLayout = ({ children }) => {
     return (
-        <SidebarProvider>
-            <Suspense fallback={<SidebarFallback />}>
-                <TeacherSidebar />
-            </Suspense>
-            <main className="flex-1">{children}</main>
-        </SidebarProvider>
+        <ProtectedRoute requiredRole="teacher">
+            <SidebarProvider>
+                <Suspense fallback={<SidebarFallback />}>
+                    <TeacherSidebar />
+                </Suspense>
+                <main className="flex-1">{children}</main>
+            </SidebarProvider>
+        </ProtectedRoute>
     )
 }
 
