@@ -15,10 +15,16 @@ export const subjects = [
     { id: 'art', title: 'Art' },
     { id: 'physical-education', title: 'Physical Education' },
     { id: 'computer-science', title: 'Computer Science' },
+    { id: 'islamic-studies', title: 'Islamic Studies' },
+    { id: 'arabic', title: 'Arabic' },
+    { id: 'Advance mathematic', title: 'Advance mathematic' },
+    {id: 'mathematics', title: 'Mathematics'},
+    {id: 'Life skills', title: "Life skills"},
+    {id: 'Business', title: "Business"}
 ];
 
 // Grades
-export const grades = ['K', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'];
+export const grades = ['KG1' , 'KG2' , '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'];
 
 // Content Types
 export const contentTypes = [

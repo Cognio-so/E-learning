@@ -16,17 +16,21 @@ const userSchema = new mongoose.Schema({
     },
     role: {
         type: String,
-        enum: ['student', 'teacher'],
+        enum: ['student', 'teacher', 'admin'],
         default: 'student',
     },
     grade: {
         type: String,
         required: true,
-        enum: ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', 'K']
+        enum: ['KG1', 'KG2', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12']
     },
     subjects: {
         type: [String],
         default: []
+    },
+    profilePicture: {
+        type: String,
+        default: null
     },
     lastActive: {
         type: Date,

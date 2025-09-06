@@ -332,6 +332,106 @@ const updateStudentProfile = async (req, res) => {
     }
 };
 
+const updateProfile = async (req, res) => {
+    try {
+        const { name, email, currentPassword, newPassword, profilePicture } = req.body;
+        const userId = req.user._id;
+
+        const user = await User.findById(userId);
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: 'User not found'
+            });
+        }
+
+        const updateData = {};
+
+        // Update name if provided
+        if (name && name.trim() !== '') {
+            updateData.name = name.trim();
+        }
+
+        // Update email if provided and different
+        if (email && email !== user.email) {
+            // Check if email already exists
+            const existingUser = await User.findOne({ email, _id: { $ne: userId } });
+            if (existingUser) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Email already exists'
+                });
+            }
+            updateData.email = email;
+        }
+
+        // Update password if provided
+        if (newPassword) {
+            if (!currentPassword) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Current password is required to change password'
+                });
+            }
+
+            // Verify current password
+            const isCurrentPasswordValid = await bcrypt.compare(currentPassword, user.password);
+            if (!isCurrentPasswordValid) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Current password is incorrect'
+                });
+            }
+
+            if (newPassword.length < 6) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'New password must be at least 6 characters long'
+                });
+            }
+
+            updateData.password = await bcrypt.hash(newPassword, 10);
+        }
+
+        // Update profile picture if provided
+        if (profilePicture) {
+            updateData.profilePicture = profilePicture;
+        }
+
+        // Update user
+        const updatedUser = await User.findByIdAndUpdate(
+            userId,
+            updateData,
+            { new: true }
+        );
+
+        return res.status(200).json({
+            success: true,
+            message: 'Profile updated successfully',
+            user: {
+                _id: updatedUser._id,
+                name: updatedUser.name,
+                email: updatedUser.email,
+                role: updatedUser.role,
+                grade: updatedUser.grade,
+                subjects: updatedUser.subjects,
+                profilePicture: updatedUser.profilePicture,
+                isVerified: updatedUser.isVerified,
+                createdAt: updatedUser.createdAt,
+                lastActive: updatedUser.lastActive,
+            }
+        });
+
+    } catch (error) {
+        console.error('Update profile error:', error);
+        return res.status(500).json({
+            success: false,
+            message: 'Failed to update profile',
+            error: error.message
+        });
+    }
+};
+
 
 module.exports = {
     register,
@@ -342,5 +442,6 @@ module.exports = {
     getCurrentUser,
     getAllStudents,
     deleteStudent,
-    updateStudentProfile
+    updateStudentProfile,
+    updateProfile,
 }

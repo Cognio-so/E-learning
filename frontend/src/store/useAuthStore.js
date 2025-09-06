@@ -263,6 +263,45 @@ const useAuthStore = create(
                 }
             },
 
+            updateProfile: async (profileData) => {
+                set({ isLoading: true });
+                try {
+                    const response = await axiosInstance.put("/api/auth/profile", profileData);
+                    if (response.status === 200) {
+                        set({ 
+                            user: response.data.user,
+                            isLoading: false 
+                        });
+                        return response.data;
+                    }
+                } catch (error) {
+                    set({ isLoading: false });
+                    throw error;
+                }
+            },
+
+            uploadProfilePicture: async (file) => {
+                set({ isLoading: true });
+                try {
+                    const formData = new FormData();
+                    formData.append('profilePicture', file);
+                    
+                    const response = await axiosInstance.post("/api/auth/upload-profile-picture", formData, {
+                        headers: {
+                            'Content-Type': 'multipart/form-data',
+                        },
+                    });
+                    
+                    if (response.status === 200) {
+                        set({ isLoading: false });
+                        return response.data;
+                    }
+                } catch (error) {
+                    set({ isLoading: false });
+                    throw error;
+                }
+            },
+
             // Initialize auth on app start
             initializeAuth: async () => {
                 const { isAuthenticated } = get();
@@ -282,7 +321,12 @@ const useAuthStore = create(
                         }
                     }
                 }
-            }
+            },
+
+            // Add admin role check
+            isAdmin: () => get().user?.role === 'admin',
+            isTeacher: () => get().user?.role === 'teacher',
+            isStudent: () => get().user?.role === 'student',
         }),
         {
             name: "auth-storage",
